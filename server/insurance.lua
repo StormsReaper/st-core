@@ -90,6 +90,11 @@ function STInsurance.PurchasePolicy(data)
         return false, 'invalid_plan'
     end
 
+    -- A vehicle policy must provide at least liability coverage.
+    if Config.Insurance.RequireInsurance and tonumber(plan.liability_limit) <= 0 then
+        return false, 'liability_coverage_required'
+    end
+
     local existing = STInsurance.GetPolicy(data.vehicleIdentifier)
     if existing and STInsurance.IsPolicyActive(existing) then
         return false, 'active_policy_exists'
