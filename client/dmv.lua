@@ -15,7 +15,6 @@ local function createDMVBlips()
     if not Config.DMV.Blip or not Config.DMV.Blip.Enabled then return end
     for _, blip in ipairs(dmvBlips) do RemoveBlip(blip) end
     dmvBlips = {}
-
     for _, location in ipairs(Config.DMV.Locations or {}) do
         local blip = AddBlipForCoord(location.x, location.y, location.z)
         SetBlipSprite(blip, Config.DMV.Blip.Sprite or 498)
@@ -34,12 +33,8 @@ local function createDMVPeds()
     local model = joaat(Config.DMV.PedModel or 's_m_m_fiboffice_01')
     RequestModel(model)
     while not HasModelLoaded(model) do Wait(50) end
-
-    for _, ped in ipairs(dmvPeds) do
-        if DoesEntityExist(ped) then DeletePed(ped) end
-    end
+    for _, ped in ipairs(dmvPeds) do if DoesEntityExist(ped) then DeletePed(ped) end end
     dmvPeds = {}
-
     for _, location in ipairs(Config.DMV.Locations or {}) do
         local ped = CreatePed(4, model, location.x, location.y, location.z - 1.0, location.heading or 0.0, false, false)
         SetEntityAsMissionEntity(ped, true, true)
@@ -52,7 +47,6 @@ local function createDMVPeds()
         TaskStartScenarioInPlace(ped, Config.DMV.PedScenario or 'WORLD_HUMAN_CLIPBOARD', 0, true)
         dmvPeds[#dmvPeds + 1] = ped
     end
-
     SetModelAsNoLongerNeeded(model)
 end
 
@@ -60,13 +54,10 @@ CreateThread(function()
     Wait(1000)
     createDMVBlips()
     createDMVPeds()
-
     while true do
         local wait = 1000
-        local playerPed = PlayerPedId()
-        local coords = GetEntityCoords(playerPed)
+        local coords = GetEntityCoords(PlayerPedId())
         local interactionDistance = Config.DMV.InteractionDistance or 2.0
-
         for index, location in ipairs(Config.DMV.Locations or {}) do
             local distance = #(coords - vector3(location.x, location.y, location.z))
             if distance < 15.0 then
@@ -91,17 +82,13 @@ AddEventHandler('onResourceStop', function(resource)
     SetNuiFocus(false, false)
 end)
 
-RegisterNUICallback('close', function(_, cb)
-    SetNuiFocus(false, false)
-    SendNUIMessage({ action = 'close' })
-    cb({ ok = true })
-end)
+RegisterNUICallback('close', function(_, cb) SetNuiFocus(false, false); SendNUIMessage({ action = 'close' }); cb({ ok = true }) end)
 RegisterNUICallback('load', function(_, cb) TriggerServerEvent('st-core:server:dmvData'); cb({ ok = true }) end)
+RegisterNUICallback('lookupVehicle', function(data, cb) TriggerServerEvent('st-core:server:lookupVehicleByPlate', data); cb({ ok = true }) end)
 RegisterNUICallback('registerVehicle', function(data, cb) TriggerServerEvent('st-core:server:registerVehicle', data); cb({ ok = true }) end)
 RegisterNUICallback('renewRegistration', function(data, cb) TriggerServerEvent('st-core:server:renewRegistration', data); cb({ ok = true }) end)
 RegisterNUICallback('buyInsurance', function(data, cb) TriggerServerEvent('st-core:server:buyInsurance', data); cb({ ok = true }) end)
 RegisterNUICallback('renewInsurance', function(data, cb) TriggerServerEvent('st-core:server:renewInsurance', data); cb({ ok = true }) end)
 RegisterNUICallback('customPlate', function(data, cb) TriggerServerEvent('st-core:server:customPlate', data); cb({ ok = true }) end)
-
 RegisterNetEvent('st-core:client:dmvData', function(data) SendNUIMessage({ action = 'data', data = data }) end)
 RegisterNetEvent('st-core:client:dmvResult', function(result) SendNUIMessage({ action = 'result', result = result }) end)
