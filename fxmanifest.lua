@@ -4,7 +4,7 @@ game 'gta5'
 name 'st-core'
 author 'StormsReaper'
 description 'Storms Technologies core framework for FiveM.'
-version '0.4.0'
+version '0.5.0'
 
 lua54 'yes'
 
@@ -17,7 +17,9 @@ shared_scripts {
 
 client_scripts {
     'client.lua',
-    'client/dmv.lua'
+    'client/dmv.lua',
+    'client/sales.lua',
+    'integrations/jg-dealerships/client.lua'
 }
 
 server_scripts {
@@ -29,6 +31,7 @@ server_scripts {
     'server/vehicles.lua',
     'server/insurance.lua',
     'server/dmv.lua',
+    'server/sales.lua',
     'integrations/jg-dealerships/server.lua'
 }
 
@@ -39,5 +42,6 @@ files {
 }
 
 dependencies {
-    'oxmysql'
+    'oxmysql',
+    'ox_inventory'
 }
