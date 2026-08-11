@@ -1,6 +1,18 @@
 local function result(ok, message, data) return { ok = ok, message = message, data = data } end
 local function notify(source, payload) TriggerClientEvent('st-core:client:dmvResult', source, payload) end
 
+local function getPurchaseOriginalPlate(purchase)
+    if not purchase or type(purchase.vehicle_identifier) ~= 'string' then return nil end
+    local prefix = Config.Integrations and Config.Integrations.JGDealershipsV2 and Config.Integrations.JGDealershipsV2.IdentifierPrefix or 'jg:'
+    if purchase.vehicle_identifier:sub(1, #prefix) ~= prefix then return nil end
+    return purchase.vehicle_identifier:sub(#prefix + 1)
+end
+
+local function syncFrameworkPlate(ownerIdentifier, oldPlate, newPlate)
+    if not oldPlate or oldPlate == newPlate then return true end
+    return STVehicles.UpdateOwnedVehiclePlate(ownerIdentifier, oldPlate, newPlate)
+end
+
 RegisterNetEvent('st-core:server:dmvOpen', function()
     local source = source
     TriggerEvent('st-core:server:dmvData', source)
@@ -42,8 +54,17 @@ RegisterNetEvent('st-core:server:registerVehicle', function(data)
     local paid, payError = STPayments.Charge(source, total, 'DMV vehicle registration')
     if not paid then return notify(source, result(false, payError == 'insufficient_funds' and 'Insufficient funds.' or 'Payment failed.')) end
 
-    local ok, registration = STVehicles.RegisterVehicle({ ownerIdentifier = identifier, vehicleIdentifier = purchase.vehicle_identifier, plate = data.customPlate })
+    local requestedPlate = data.customPlate and STValidation.NormalizePlate(data.customPlate) or nil
+    local oldPlate = getPurchaseOriginalPlate(purchase)
+    local synced = syncFrameworkPlate(identifier, oldPlate, requestedPlate or '')
+    if not synced then
+        STPayments.Add(source, total, 'bank', 'DMV registration refund')
+        return notify(source, result(false, 'The vehicle record could not be updated. Registration was not completed.'))
+    end
+
+    local ok, registration = STVehicles.RegisterVehicle({ ownerIdentifier = identifier, vehicleIdentifier = purchase.vehicle_identifier, plate = requestedPlate })
     if not ok then
+        if requestedPlate then STVehicles.UpdateOwnedVehiclePlate(identifier, requestedPlate, oldPlate) end
         STPayments.Add(source, total, 'bank', 'DMV registration refund')
         return notify(source, result(false, registration))
     end
@@ -113,7 +134,19 @@ RegisterNetEvent('st-core:server:customPlate', function(data)
     local fee = tonumber(Config.Plate.CustomPlateFee) or 0
     local paid, err = STPayments.Charge(source, fee, 'Custom vehicle plate')
     if not paid then return notify(source, result(false, err == 'insufficient_funds' and 'Insufficient funds.' or 'Payment failed.')) end
+
+    local oldPlate = registration.plate
+    local synced, syncError = STVehicles.UpdateOwnedVehiclePlate(identifier, oldPlate, plate)
+    if not synced then
+        STPayments.Add(source, fee, 'bank', 'Custom plate refund')
+        return notify(source, result(false, syncError or 'Unable to update vehicle plate.'))
+    end
+
     local affected = MySQL.update.await("UPDATE st_vehicle_registrations SET plate = ?, plate_type = 'custom', updated_at = CURRENT_TIMESTAMP WHERE id = ?", { plate, registration.id })
-    if affected ~= 1 then STPayments.Add(source, fee, 'bank', 'Custom plate refund'); return notify(source, result(false, 'Unable to update plate.')) end
+    if affected ~= 1 then
+        STVehicles.UpdateOwnedVehiclePlate(identifier, plate, oldPlate)
+        STPayments.Add(source, fee, 'bank', 'Custom plate refund')
+        return notify(source, result(false, 'Unable to update registration.'))
+    end
     notify(source, result(true, 'Custom plate assigned.', STVehicles.GetRegistration(registration.vehicle_identifier)))
 end)
