@@ -2,7 +2,7 @@ Config = {}
 
 Config.Debug = true
 Config.ResourceName = 'st-core'
-Config.Version = '0.4.0'
+Config.Version = '0.5.0'
 Config.PrintStartupMessage = true
 
 Config.Framework = {
@@ -14,6 +14,7 @@ Config.Framework = {
 
 Config.Registration = {
     DurationDays = 30,
+    TransferFee = 350,
 }
 
 Config.Plate = {
@@ -40,6 +41,18 @@ Config.Payment = {
 
 Config.Documents = {
     InsuranceCardItem = 'insurance_card',
+    VehicleSaleContractItem = 'vehicle_sale_contract',
+    ContractValidityDays = 7,
+    ContractMaxDistance = 5.0,
+}
+
+Config.Sales = {
+    RequireVehicleNearSeller = true,
+    RequireBuyerNearSeller = true,
+    BuyerDistance = 5.0,
+    VehicleDistance = 8.0,
+    RequireSameVehicleAtFinalization = true,
+    AutoCancelExpiredContracts = true,
 }
 
 Config.Integrations = {
