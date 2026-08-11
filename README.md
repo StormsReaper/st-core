@@ -37,21 +37,7 @@ exports['st-core']:HandleVehiclePurchase(source, {
 })
 ```
 
-This creates a pending DMV registration record. The player then completes registration at the DMV.
-
-A client-side event is also available:
-
-```lua
-TriggerServerEvent('st-core:server:vehiclePurchased', {
-    vehicleIdentifier = vinOrUniqueVehicleId,
-    model = vehicleModel,
-    displayName = vehicleLabel,
-    purchasePrice = finalPrice,
-    purchasedAt = os.time()
-})
-```
-
-For trusted dealership server code, prefer the server export because the purchase price should come from the dealership's authoritative transaction rather than a client.
+This creates a pending DMV registration record. The player's framework identifier is resolved from the server source, so a client cannot choose another owner's identifier.
 
 ## Insurance card
 The card is created with ox_inventory metadata containing policy number, insured vehicle, plate, coverage type, coverage limits, deductible, premium, and effective/expiration timestamps.
