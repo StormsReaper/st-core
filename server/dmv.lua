@@ -9,7 +9,7 @@ local function getPurchaseOriginalPlate(purchase)
 end
 
 local function syncFrameworkPlate(ownerIdentifier, oldPlate, newPlate)
-    if not oldPlate or oldPlate == newPlate then return true end
+    if not oldPlate or not newPlate or oldPlate == newPlate then return true end
     return STVehicles.UpdateOwnedVehiclePlate(ownerIdentifier, oldPlate, newPlate)
 end
 
@@ -54,23 +54,29 @@ RegisterNetEvent('st-core:server:registerVehicle', function(data)
     local paid, payError = STPayments.Charge(source, total, 'DMV vehicle registration')
     if not paid then return notify(source, result(false, payError == 'insufficient_funds' and 'Insufficient funds.' or 'Payment failed.')) end
 
-    local requestedPlate = data.customPlate and STValidation.NormalizePlate(data.customPlate) or nil
     local oldPlate = getPurchaseOriginalPlate(purchase)
-    local synced = syncFrameworkPlate(identifier, oldPlate, requestedPlate or '')
+    local requestedPlate = data.customPlate and STValidation.NormalizePlate(data.customPlate) or nil
+    local newPlate = requestedPlate or STVehicles.GeneratePlate()
+    if not newPlate then
+        STPayments.Add(source, total, 'bank', 'DMV registration refund')
+        return notify(source, result(false, 'Unable to generate a license plate.'))
+    end
+
+    local synced = syncFrameworkPlate(identifier, oldPlate, newPlate)
     if not synced then
         STPayments.Add(source, total, 'bank', 'DMV registration refund')
         return notify(source, result(false, 'The vehicle record could not be updated. Registration was not completed.'))
     end
 
-    local ok, registration = STVehicles.RegisterVehicle({ ownerIdentifier = identifier, vehicleIdentifier = purchase.vehicle_identifier, plate = requestedPlate })
+    local ok, registration = STVehicles.RegisterVehicle({ ownerIdentifier = identifier, vehicleIdentifier = purchase.vehicle_identifier, plate = newPlate })
     if not ok then
-        if requestedPlate then STVehicles.UpdateOwnedVehiclePlate(identifier, requestedPlate, oldPlate) end
+        if oldPlate then STVehicles.UpdateOwnedVehiclePlate(identifier, newPlate, oldPlate) end
         STPayments.Add(source, total, 'bank', 'DMV registration refund')
         return notify(source, result(false, registration))
     end
 
     STPurchases.MarkRegistered(purchase.vehicle_identifier)
-    notify(source, result(true, ('Vehicle registered successfully. Total paid: $%s'):format(total), registration))
+    notify(source, result(true, ('Vehicle registered successfully. Plate: %s. Total paid: $%s'):format(newPlate, total), registration))
     TriggerClientEvent('st-core:client:dmvData', source, { refresh = true })
 end)
 
