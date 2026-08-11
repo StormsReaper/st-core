@@ -5,60 +5,97 @@ Storms Technologies core framework for FiveM.
 ## DMV / vehicle registration
 - Physical DMV interaction point plus `/dmv` command.
 - Database-backed pending vehicle purchases.
-- Standard plates formatted `AAA 000`.
-- Standard plate generation checks both st-core registrations and the framework vehicle database for collisions.
-- Custom plates with configurable length, character, and reserved-word validation.
-- Custom plate fee.
-- Registration expiration and renewal.
-- Server-side ownership checks against the recorded purchase.
-- Framework vehicle plate synchronization when a DMV plate is issued.
+- Standard plates formatted `AAA 000` with collision checking.
+- Custom plates with validation and configurable fee.
+- VIN generation and permanent vehicle registry records.
+- Owner name, vehicle, purchase, dealership, financing and registration data are persisted.
+- Registration renewal.
+- Server-side ownership checks.
 
-## JG Dealerships v2
+## DMV purchase screen
+The DMV shows pending JG/dealership purchases with temporary plate, vehicle/model, purchase price, purchase type, payment method, financing state, dealership and purchase date. Once registered, the official record displays VIN, plate, owner name, registration expiry and purchase/dealership data.
 
-`st-core` includes a native JG Dealerships v2 purchase integration. JG's documented `jg-dealerships:client:purchase-vehicle:config` callback is listened to by st-core; you do not need to edit the JG resource itself. urlJG Dealerships v2 documentationhttps://docs.jgscripts.com/dealerships/introduction
-
-The integration:
-
-1. Detects the completed JG purchase.
-2. Resolves the buyer from QBCore/ESX server-side.
-3. Finds the newly-created framework vehicle by its JG purchase plate.
-4. Creates a pending st-core DMV purchase record.
-5. Allows the player to visit the DMV.
-6. Generates the final `AAA 000` plate or validates a custom plate.
-7. Updates the framework vehicle database from the JG purchase plate to the DMV-issued plate.
-8. Creates the active registration.
-
-The integration is enabled by default in `config.lua` and can be disabled with `Config.Integrations.JGDealershipsV2.Enabled = false`.
-
-## Vehicle insurance
-- Monthly policies.
+## Insurance
 - Liability coverage is the minimum legal coverage.
 - Liability, Standard, Comprehensive, and Premium plans are seeded by `sql/install.sql`.
+- Monthly policy expiration and renewal.
 - Policy numbers are generated automatically.
-- Policy expiration and renewal are persisted.
-- Insurance card issuance through ox_inventory.
+- Insurance card item for ox_inventory containing policy and coverage metadata.
 - Registration/insurance legal-status exports for police, MDT, dealership, and garage resources.
 
-## Payments
-`st-core` automatically detects QBCore or ESX for player money operations. The configured account priority is bank, then cash. Registration, renewal, insurance, and custom-plate charges are performed server-side and failed operations are refunded when the downstream operation fails.
+## JG Dealerships v2
+The integration uses JG's documented `jg-dealerships:client:purchase-vehicle:config` callback. JG passes `vehicle`, `plate`, `purchaseType`, `amount`, `paymentMethod`, and `financed`; st-core sends the purchase metadata to the server, then verifies ownership against the QBCore/ESX vehicle database before creating the pending DMV record. This avoids modifying the escrowed JG resource.
 
-## Insurance card
-The card is created with ox_inventory metadata containing policy number, insured vehicle, plate, coverage type, coverage limits, deductible, premium, and effective/expiration timestamps.
+JG's current documentation also demonstrates this callback as the supported post-purchase integration point. See the official JG documentation: https://docs.jgscripts.com/dealerships/integrations/pickle-mods-documents
 
-Add the item definition from `integrations/ox_inventory/insurance_card.lua` to your ox_inventory item definitions:
+## Vehicle registry / MDT
+`st_vehicle_records` is a normalized MDT-ready registry containing:
+- VIN
+- plate
+- current owner identifier and character name
+- vehicle model/display name
+- purchase price
+- dealership
+- registration status/expiration
+- insurance policy/status/expiration
+
+The framework vehicle record is also updated during registration and private transfer, so MDTS that read the normal QBCore `player_vehicles` or ESX `owned_vehicles` tables continue to resolve the current owner and plate. MDTS that need VIN/DMV-specific fields can use:
+
+```lua
+exports['st-core']:GetVehicleRecordByPlate(plate)
+exports['st-core']:GetVehicleRecordByVIN(vin)
+```
+
+There is no universal FiveM MDT schema, so the normalized registry is intentionally exposed instead of assuming one MDT vendor's private database tables.
+
+## Private vehicle sale contracts
+The DMV now supports an end-to-end private sale workflow:
+
+1. Seller visits the DMV and requests a `vehicle_sale_contract` document.
+2. Seller stands beside their registered vehicle with the buyer nearby.
+3. Seller uses the contract from ox_inventory.
+4. st-core identifies the closest vehicle, verifies that it belongs to the seller, captures VIN/plate/model/owner information and identifies the closest buyer.
+5. Seller enters the sale price and signs on the document.
+6. Seller gives the signed contract to the buyer using ox_inventory's normal item transfer.
+7. Buyer uses the document. The server verifies that the buyer is the named buyer and records the buyer signature.
+8. Buyer takes the signed contract to the DMV and submits it.
+9. The DMV re-validates the seller's current ownership, contract status and buyer identity, charges the configurable transfer fee, updates the framework owner, creates the buyer's new DMV registration period and updates the MDT registry.
+10. The seller's active insurance policy is cancelled because the vehicle changed owners. The buyer can then purchase their own policy.
+
+A buyer signature alone **never transfers ownership**. Pressing Enter or otherwise attempting to submit an unsigned buyer document does nothing because the server requires a valid signature before the contract can reach `buyer_signed`. The final transfer requires the signed document to be physically submitted at the DMV.
+
+Contracts expire automatically and every issuance/signature/transfer is written to `st_dmv_document_audit`. Completed ownership changes are also written to `st_vehicle_transfer_audit`.
+
+## Documents / ox_inventory
+Copy the definitions in `integrations/ox_inventory/insurance_card.lua` into `ox_inventory/data/items.lua`:
 
 ```lua
 ['insurance_card'] = {
     label = 'Vehicle Insurance Card',
     weight = 5,
     stack = false,
+    consume = 0,
     close = true,
     description = 'Official vehicle insurance identification card.',
-}
+},
+
+['vehicle_sale_contract'] = {
+    label = 'Vehicle Sale Contract',
+    weight = 10,
+    stack = false,
+    consume = 0,
+    close = true,
+    description = 'Official DMV vehicle bill of sale.',
+    client = {
+        export = 'st-core.useVehicleSaleContract',
+    },
+},
 ```
 
-## Generic vehicle purchase integration
-For other dealership resources, use the trusted server export after a successful sale:
+The contract uses ox_inventory's supported client item export mechanism and preserves a server-generated contract ID in metadata. The contract ID is validated against the database on every use.
+
+## Vehicle purchase API
+For non-JG dealerships, a trusted server-side dealership can call:
 
 ```lua
 exports['st-core']:HandleVehiclePurchase(source, {
@@ -66,22 +103,24 @@ exports['st-core']:HandleVehiclePurchase(source, {
     model = vehicleModel,
     displayName = vehicleLabel,
     purchasePrice = finalPrice,
+    purchaseType = 'cash',
+    paymentMethod = 'bank',
+    financed = false,
+    dealership = 'Stormline Auto Sales',
     purchasedAt = os.time()
 })
 ```
 
-The `source` argument is the buyer's server ID. The core resolves the player's framework identifier server-side and creates a pending purchase.
+For JG v2, use the built-in integration instead of editing JG.
 
 ## Requirements
-- FiveM server using Lua 5.4.
+- FiveM Lua 5.4.
 - `oxmysql`.
-- QBCore or ESX for the built-in payment and vehicle adapters.
-- `ox_inventory` for physical insurance-card documents.
-- JG Dealerships v2 is optional; its integration can be disabled.
+- QBCore or ESX for built-in framework payments/ownership updates.
+- `ox_inventory` for insurance cards and sale contracts.
+- JG Dealerships v2 is optional; the integration is enabled by default and safely does nothing when JG is not running.
 
-Run `sql/install.sql` against the server database before starting `st-core`.
-
-Recommended startup order:
+Run `sql/install.sql` against the server database, then run the migrations in `sql/migrations/` in order. Add the resource after `oxmysql`, your framework, and `ox_inventory`:
 
 ```cfg
 ensure oxmysql
@@ -97,7 +136,9 @@ ensure st-core
 local registration = exports['st-core']:GetVehicleRegistration(vehicleIdentifier)
 local insurance = exports['st-core']:GetVehicleInsurance(vehicleIdentifier)
 local legal = exports['st-core']:GetVehicleLegalStatus(vehicleIdentifier)
+local vehicleByPlate = exports['st-core']:GetVehicleRecordByPlate(plate)
+local vehicleByVIN = exports['st-core']:GetVehicleRecordByVIN(vin)
 ```
 
-## Notes
-The core keeps registration, insurance, payment, document, and purchase workflows server-authoritative. Dealerships create purchase records; the DMV controls registration; insurance is purchased only against an owned registered vehicle. The NUI is deliberately contained inside `st-core` so other resources can consume the APIs without duplicating database logic.
+## Security model
+All authoritative operations happen server-side: payment, purchase ownership verification, plate allocation, VIN allocation, contract identity, signature acceptance, framework ownership changes, registration issuance, and insurance eligibility. Client UI values are treated as requests rather than proof of ownership or payment.
