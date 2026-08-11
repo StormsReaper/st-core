@@ -18,6 +18,14 @@ function STVehicles.GetRegistration(vehicleIdentifier)if not STValidation.IsIden
 function STVehicles.GetVehicleRecordByPlate(plate)return MySQL.single.await('SELECT * FROM st_vehicle_records WHERE plate = ? LIMIT 1',{STValidation.NormalizePlate(plate)})end
 function STVehicles.GetVehicleRecordByVIN(vin)if type(vin)~='string'then return nil end;return MySQL.single.await('SELECT * FROM st_vehicle_records WHERE vin = ? LIMIT 1',{vin:upper()})end
 function STVehicles.GetOwnedVehicleByPlate(ownerIdentifier,plate)if not STValidation.IsIdentifier(ownerIdentifier)then return nil end;return getFrameworkVehicle(ownerIdentifier,plate)end
+function STVehicles.GetVehicleModel(record)
+ if type(record)~='table'then return nil end
+ if record.vehicle_model and tostring(record.vehicle_model)~='' then return tostring(record.vehicle_model)end
+ if record.model and tostring(record.model)~='' then local decoded=decodeVehicleModel(record.model);if decoded and tostring(decoded)~='' then return tostring(decoded)end end
+ if record.vehicle and tostring(record.vehicle)~='' then local decoded=decodeVehicleModel(record.vehicle);if decoded and tostring(decoded)~='' then return tostring(decoded)end end
+ if record.display_name and tostring(record.display_name)~='' then return tostring(record.display_name)end
+ return nil
+end
 function STVehicles.LookupOwnedVehicleForDMV(ownerIdentifier,ownerName,plate)
  plate=STValidation.NormalizePlate(plate);if plate=='' or #plate>12 then return nil,'invalid_plate'end
  local existingRegistration=STVehicles.GetRegistrationByPlate(plate)
