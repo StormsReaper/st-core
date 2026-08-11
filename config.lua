@@ -2,9 +2,15 @@ Config = {}
 
 Config.Debug = true
 Config.ResourceName = 'st-core'
-Config.Version = '0.3.0'
-
+Config.Version = '0.4.0'
 Config.PrintStartupMessage = true
+
+Config.Framework = {
+    VehicleTable = {
+        QBCore = 'player_vehicles',
+        ESX = 'owned_vehicles',
+    },
+}
 
 Config.Registration = {
     DurationDays = 30,
@@ -34,6 +40,16 @@ Config.Payment = {
 
 Config.Documents = {
     InsuranceCardItem = 'insurance_card',
+}
+
+Config.Integrations = {
+    JGDealershipsV2 = {
+        Enabled = true,
+        ResourceName = 'jg-dealerships',
+        PurchaseEvent = 'jg-dealerships:client:purchase-vehicle:config',
+        IdentifierPrefix = 'jg:',
+        WaitForFrameworkVehicleMs = 5000,
+    },
 }
 
 Config.DMV = {
