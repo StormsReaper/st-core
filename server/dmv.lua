@@ -56,6 +56,11 @@ RegisterNetEvent('st-core:server:registerVehicle', function(data)
 
     local oldPlate = getPurchaseOriginalPlate(purchase)
     local requestedPlate = data.customPlate and STValidation.NormalizePlate(data.customPlate) or nil
+    if requestedPlate and not STValidation.IsCustomPlate(requestedPlate) then
+        STPayments.Add(source, total, 'bank', 'DMV registration refund')
+        return notify(source, result(false, 'Invalid custom plate.'))
+    end
+
     local newPlate = requestedPlate or STVehicles.GeneratePlate()
     if not newPlate then
         STPayments.Add(source, total, 'bank', 'DMV registration refund')
