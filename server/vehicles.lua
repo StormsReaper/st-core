@@ -27,6 +27,21 @@ local function generateUniquePlate()
     return nil
 end
 
+local function getFramework()
+    if GetResourceState('qb-core') == 'started' then return 'qbcore' end
+    if GetResourceState('es_extended') == 'started' then return 'esx' end
+    return nil
+end
+
+local function decodeVehicleModel(value)
+    if type(value) ~= 'string' then return nil end
+    local ok, data = pcall(json.decode, value)
+    if ok and type(data) == 'table' then
+        return data.model or data.vehicle or data.name
+    end
+    return value
+end
+
 CreateThread(function() math.randomseed(os.time() + GetGameTimer()) end)
 STVehicles = {}
 
@@ -42,6 +57,45 @@ end
 function STVehicles.GetRegistration(vehicleIdentifier)
     if not STValidation.IsIdentifier(vehicleIdentifier) then return nil end
     return MySQL.single.await('SELECT * FROM st_vehicle_registrations WHERE vehicle_identifier = ? LIMIT 1', { vehicleIdentifier })
+end
+
+function STVehicles.GetOwnedVehicleByPlate(ownerIdentifier, plate)
+    if not STValidation.IsIdentifier(ownerIdentifier) then return nil end
+    plate = STValidation.NormalizePlate(plate)
+    local framework = getFramework()
+    if framework == 'qbcore' then
+        return MySQL.single.await('SELECT plate, citizenid, vehicle FROM player_vehicles WHERE citizenid = ? AND plate = ? LIMIT 1', { ownerIdentifier, plate })
+    elseif framework == 'esx' then
+        return MySQL.single.await('SELECT plate, owner, vehicle FROM owned_vehicles WHERE owner = ? AND plate = ? LIMIT 1', { ownerIdentifier, plate })
+    end
+    return nil
+end
+
+function STVehicles.GetVehicleModel(record)
+    if not record then return nil end
+    return decodeVehicleModel(record.vehicle)
+end
+
+function STVehicles.UpdateOwnedVehiclePlate(ownerIdentifier, oldPlate, newPlate)
+    if not STValidation.IsIdentifier(ownerIdentifier) then return false, 'invalid_owner_identifier' end
+    oldPlate = STValidation.NormalizePlate(oldPlate)
+    newPlate = STValidation.NormalizePlate(newPlate)
+    if oldPlate == '' or newPlate == '' or oldPlate == newPlate then return true end
+    local framework = getFramework()
+
+    if framework == 'qbcore' then
+        local collision = MySQL.single.await('SELECT id FROM player_vehicles WHERE plate = ? LIMIT 1', { newPlate })
+        if collision then return false, 'plate_already_in_framework_database' end
+        local affected = MySQL.update.await('UPDATE player_vehicles SET plate = ? WHERE citizenid = ? AND plate = ?', { newPlate, ownerIdentifier, oldPlate })
+        return affected == 1, affected == 1 and nil or 'framework_vehicle_update_failed'
+    elseif framework == 'esx' then
+        local collision = MySQL.single.await('SELECT id FROM owned_vehicles WHERE plate = ? LIMIT 1', { newPlate })
+        if collision then return false, 'plate_already_in_framework_database' end
+        local affected = MySQL.update.await('UPDATE owned_vehicles SET plate = ? WHERE owner = ? AND plate = ?', { newPlate, ownerIdentifier, oldPlate })
+        return affected == 1, affected == 1 and nil or 'framework_vehicle_update_failed'
+    end
+
+    return false, 'unsupported_framework'
 end
 
 function STVehicles.RegisterVehicle(data)
@@ -98,3 +152,5 @@ exports('GetVehicleRegistrationByPlate', STVehicles.GetRegistrationByPlate)
 exports('RegisterVehicle', STVehicles.RegisterVehicle)
 exports('RenewVehicleRegistration', STVehicles.RenewRegistration)
 exports('IsVehicleRegistered', STVehicles.IsRegistered)
+exports('GetOwnedVehicleByPlate', STVehicles.GetOwnedVehicleByPlate)
+exports('UpdateOwnedVehiclePlate', STVehicles.UpdateOwnedVehiclePlate)
