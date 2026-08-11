@@ -2,65 +2,59 @@ STPayments = {}
 
 local function getQBCore()
     if GetResourceState('qb-core') ~= 'started' then return nil end
-    local ok, core = pcall(function()
-        return exports['qb-core']:GetCoreObject()
-    end)
+    local ok, core = pcall(function() return exports['qb-core']:GetCoreObject() end)
     return ok and core or nil
 end
 
 local function getESX()
     if GetResourceState('es_extended') ~= 'started' then return nil end
-    local ok, esx = pcall(function()
-        return exports['es_extended']:getSharedObject()
-    end)
+    local ok, esx = pcall(function() return exports['es_extended']:getSharedObject() end)
     return ok and esx or nil
 end
 
 function STPayments.GetPlayer(source)
     local qb = getQBCore()
-    if qb then
-        return qb.Functions.GetPlayer(source), 'qbcore'
-    end
-
+    if qb then return qb.Functions.GetPlayer(source), 'qbcore' end
     local esx = getESX()
-    if esx then
-        return esx.GetPlayerFromId(source), 'esx'
-    end
-
+    if esx then return esx.GetPlayerFromId(source), 'esx' end
     return nil, nil
 end
 
 function STPayments.GetIdentifier(source)
     local player = STPayments.GetPlayer(source)
     if not player then return nil end
-
-    if player.PlayerData then
-        return player.PlayerData.citizenid
-    end
-
+    if player.PlayerData then return player.PlayerData.citizenid end
     return player.identifier
+end
+
+function STPayments.GetName(source)
+    local player, framework = STPayments.GetPlayer(source)
+    if not player then return nil end
+    if framework == 'qbcore' then
+        local charinfo = player.PlayerData and player.PlayerData.charinfo or {}
+        local first = tostring(charinfo.firstname or '')
+        local last = tostring(charinfo.lastname or '')
+        local name = (first .. ' ' .. last):gsub('^%s+', ''):gsub('%s+$', '')
+        return name ~= '' and name or player.PlayerData.name
+    end
+    if player.getName then return player.getName() end
+    return player.name
 end
 
 function STPayments.Remove(source, amount, account, reason)
     amount = tonumber(amount)
     if not amount or amount <= 0 then return false, 'invalid_amount' end
-
     account = account or 'bank'
     local player, framework = STPayments.GetPlayer(source)
     if not player then return false, 'framework_player_not_found' end
-
     if framework == 'qbcore' then
         local balance = player.Functions.GetMoney(account)
         if balance < amount then return false, 'insufficient_funds' end
         local removed = player.Functions.RemoveMoney(account, amount, reason or Config.Payment.DefaultReason)
         return removed == true, removed == true and nil or 'payment_failed'
     end
-
     local accountObject = player.getAccount(account)
-    if not accountObject or accountObject.money < amount then
-        return false, 'insufficient_funds'
-    end
-
+    if not accountObject or accountObject.money < amount then return false, 'insufficient_funds' end
     player.removeAccountMoney(account, amount, reason or Config.Payment.DefaultReason)
     return true
 end
@@ -68,15 +62,10 @@ end
 function STPayments.Add(source, amount, account, reason)
     amount = tonumber(amount)
     if not amount or amount <= 0 then return false, 'invalid_amount' end
-
     account = account or 'bank'
     local player, framework = STPayments.GetPlayer(source)
     if not player then return false, 'framework_player_not_found' end
-
-    if framework == 'qbcore' then
-        return player.Functions.AddMoney(account, amount, reason or Config.Payment.DefaultReason) == true
-    end
-
+    if framework == 'qbcore' then return player.Functions.AddMoney(account, amount, reason or Config.Payment.DefaultReason) == true end
     player.addAccountMoney(account, amount, reason or Config.Payment.DefaultReason)
     return true
 end
@@ -93,3 +82,4 @@ end
 
 exports('ChargePlayer', STPayments.Charge)
 exports('GetPlayerIdentifier', STPayments.GetIdentifier)
+exports('GetPlayerName', STPayments.GetName)
