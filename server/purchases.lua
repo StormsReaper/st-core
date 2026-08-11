@@ -1,0 +1,77 @@
+STPurchases = {}
+
+local function getPending(source)
+    local identifier = STPayments.GetIdentifier(source)
+    if not identifier then return {} end
+
+    return MySQL.query.await([[ 
+        SELECT * FROM st_vehicle_purchases
+        WHERE owner_identifier = ? AND status = 'pending'
+        ORDER BY purchased_at DESC
+    ]], { identifier }) or {}
+end
+
+function STPurchases.RecordPurchase(data)
+    if type(data) ~= 'table' then return false, 'invalid_data' end
+    if not STValidation.IsIdentifier(data.ownerIdentifier) then return false, 'invalid_owner_identifier' end
+    if not STValidation.IsIdentifier(data.vehicleIdentifier) then return false, 'invalid_vehicle_identifier' end
+
+    local existing = MySQL.single.await(
+        'SELECT id FROM st_vehicle_purchases WHERE vehicle_identifier = ? LIMIT 1',
+        { data.vehicleIdentifier }
+    )
+    if existing then return false, 'purchase_already_recorded' end
+
+    local id = MySQL.insert.await([[ 
+        INSERT INTO st_vehicle_purchases
+            (owner_identifier, vehicle_identifier, model, display_name, purchase_price, purchased_at, status)
+        VALUES (?, ?, ?, ?, ?, ?, 'pending')
+    ]], {
+        data.ownerIdentifier,
+        data.vehicleIdentifier,
+        data.model or 'unknown',
+        data.displayName or data.model or 'Vehicle',
+        tonumber(data.purchasePrice) or 0,
+        tonumber(data.purchasedAt) or os.time()
+    })
+
+    return id ~= nil, id or 'database_insert_failed'
+end
+
+function STPurchases.GetPending(source)
+    return getPending(source)
+end
+
+function STPurchases.GetPurchase(vehicleIdentifier)
+    if not STValidation.IsIdentifier(vehicleIdentifier) then return nil end
+    return MySQL.single.await(
+        'SELECT * FROM st_vehicle_purchases WHERE vehicle_identifier = ? LIMIT 1',
+        { vehicleIdentifier }
+    )
+end
+
+function STPurchases.MarkRegistered(vehicleIdentifier)
+    return MySQL.update.await([[ 
+        UPDATE st_vehicle_purchases
+        SET status = 'registered', registered_at = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE vehicle_identifier = ? AND status = 'pending'
+    ]], { os.time(), vehicleIdentifier }) == 1
+end
+
+function STPurchases.HandlePurchase(source, data)
+    if source <= 0 then return false, 'invalid_source' end
+    data = data or {}
+    data.ownerIdentifier = data.ownerIdentifier or STPayments.GetIdentifier(source)
+    return STPurchases.RecordPurchase(data)
+end
+
+RegisterNetEvent('st-core:server:vehiclePurchased', function(data)
+    local source = source
+    local ok, result = STPurchases.HandlePurchase(source, data)
+    TriggerClientEvent('st-core:client:vehiclePurchaseRecorded', source, ok, result)
+end)
+
+exports('RecordVehiclePurchase', STPurchases.RecordPurchase)
+exports('HandleVehiclePurchase', STPurchases.HandlePurchase)
+exports('GetPendingVehiclePurchases', STPurchases.GetPending)
+exports('GetVehiclePurchase', STPurchases.GetPurchase)
