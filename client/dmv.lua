@@ -7,8 +7,30 @@ function STDMV.Open()
 end
 
 RegisterNetEvent('st-core:client:openDMV', function() STDMV.Open() end)
-
 RegisterCommand(Config.DMV.Command or 'dmv', function() STDMV.Open() end, false)
+
+-- JG Dealerships v2 purchase hook.
+-- JG's documented purchase callback supplies vehicle, plate, purchaseType, amount, paymentMethod and financed.
+-- We only forward the plate/model as a lookup hint; ownership and the authoritative vehicle record are resolved server-side.
+if Config.Integrations and Config.Integrations.JGDealershipsV2 and Config.Integrations.JGDealershipsV2.Enabled then
+    RegisterNetEvent(Config.Integrations.JGDealershipsV2.PurchaseEvent, function(vehicle, plate, purchaseType, amount, paymentMethod, financed)
+        local model
+        if vehicle and DoesEntityExist(vehicle) then
+            local modelHash = GetEntityModel(vehicle)
+            model = GetDisplayNameFromVehicleModel(modelHash)
+            if model == 'CARNOTFOUND' then model = tostring(modelHash) end
+        end
+
+        TriggerServerEvent('st-core:server:jgDealershipsPurchase', {
+            plate = plate,
+            model = model,
+            purchaseType = purchaseType,
+            amount = tonumber(amount),
+            paymentMethod = paymentMethod,
+            financed = financed == true
+        })
+    end)
+end
 
 CreateThread(function()
     while true do
