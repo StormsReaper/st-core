@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>ST DMV</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app" class="hidden">
+    <div class="window">
+        <header>
+            <div><span class="eyebrow">STATE SERVICES</span><h1>Department of Motor Vehicles</h1></div>
+            <button id="close">×</button>
+        </header>
+        <nav>
+            <button class="tab active" data-tab="vehicles">Vehicles</button>
+            <button class="tab" data-tab="insurance">Insurance</button>
+        </nav>
+        <main>
+            <section id="vehicles" class="tab-panel active">
+                <div class="section-title"><h2>Pending registrations</h2><span>Purchased vehicles awaiting registration</span></div>
+                <div id="pending" class="cards"></div>
+                <div class="section-title"><h2>Your registrations</h2><span>Registration and plate status</span></div>
+                <div id="registrations" class="cards"></div>
+            </section>
+            <section id="insurance" class="tab-panel">
+                <div class="section-title"><h2>Insurance</h2><span>At least liability coverage is required</span></div>
+                <div id="insuranceCards" class="cards"></div>
+                <div class="section-title"><h2>Coverage plans</h2><span>Choose the coverage that fits your vehicle</span></div>
+                <div id="plans" class="plans"></div>
+            </section>
+        </main>
+        <div id="toast"></div>
+    </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
