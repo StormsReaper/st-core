@@ -2,7 +2,7 @@ Config = {}
 
 Config.Debug = true
 Config.ResourceName = 'st-core'
-Config.Version = '0.5.0'
+Config.Version = '0.5.1'
 Config.PrintStartupMessage = true
 
 Config.Framework = {
@@ -67,7 +67,17 @@ Config.Integrations = {
 
 Config.DMV = {
     Command = 'dmv',
+    InteractionDistance = 2.0,
+    PedModel = 's_m_m_fiboffice_01',
+    PedScenario = 'WORLD_HUMAN_CLIPBOARD',
+    Blip = {
+        Enabled = true,
+        Sprite = 498,
+        Color = 3,
+        Scale = 0.8,
+        Name = 'Department of Motor Vehicles',
+    },
     Locations = {
-        { x = 240.0, y = -1379.0, z = 33.7 },
+        { x = 415.1775, y = -1108.178, z = 31.02456, heading = 0.0 },
     },
 }
