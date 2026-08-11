@@ -37,14 +37,13 @@
                     <div><strong>Vehicle Sale Contract</strong><p>Request an official contract, complete it with the buyer beside the vehicle, collect both signatures, then submit the completed document to the DMV.</p></div>
                     <button class="action" onclick="issueSaleContract()">Request contract</button>
                 </article>
-                <div class="steps"><div><b>1</b><span>Request contract</span></div><div><b>2</b><span>Meet buyer at vehicle</span></div><div><b>3</b><span>Seller signs &amp; sets price</span></div><div><b>4</b><span>Buyer signs</span></div><div><b>5</b><span>Ownership transfers</span></div></div>
-                <div class="notice"><strong>Fraud protection</strong><span>Ownership is transferred only after the named buyer provides a valid signature. The server re-checks ownership, vehicle plate, proximity and contract status before completing the transfer.</span></div>
+                <div class="steps"><div><b>1</b><span>Request contract</span></div><div><b>2</b><span>Meet buyer at vehicle</span></div><div><b>3</b><span>Seller signs &amp; sets price</span></div><div><b>4</b><span>Buyer signs</span></div><div><b>5</b><span>Submit at DMV</span></div></div>
+                <div class="notice"><strong>Fraud protection</strong><span>Ownership is transferred only after the named buyer provides a valid signature and submits the signed document at the DMV. The server re-checks ownership, vehicle and contract status before completing the transfer.</span></div>
             </section>
         </main>
         <div id="toast"></div>
     </div>
 </div>
-
 <div id="contractOverlay" class="hidden">
     <div class="contract-window">
         <header><div><span class="eyebrow">STATE OF SAN ANDREAS</span><h1>Vehicle Bill of Sale</h1><p id="contractStatus" class="subtitle"></p></div><button id="contractClose">×</button></header>
@@ -52,5 +51,6 @@
     </div>
 </div>
 <script src="app.js"></script>
+<script src="contract-hotkeys.js"></script>
 </body>
 </html>
