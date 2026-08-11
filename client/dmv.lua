@@ -11,27 +11,6 @@ end
 RegisterNetEvent('st-core:client:openDMV', function() STDMV.Open() end)
 RegisterCommand(Config.DMV.Command or 'dmv', function() STDMV.Open() end, false)
 
--- JG Dealerships v2 purchase hook.
-if Config.Integrations and Config.Integrations.JGDealershipsV2 and Config.Integrations.JGDealershipsV2.Enabled then
-    RegisterNetEvent(Config.Integrations.JGDealershipsV2.PurchaseEvent, function(vehicle, plate, purchaseType, amount, paymentMethod, financed)
-        local model
-        if vehicle and DoesEntityExist(vehicle) then
-            local modelHash = GetEntityModel(vehicle)
-            model = GetDisplayNameFromVehicleModel(modelHash)
-            if model == 'CARNOTFOUND' then model = tostring(modelHash) end
-        end
-
-        TriggerServerEvent('st-core:server:jgDealershipsPurchase', {
-            plate = plate,
-            model = model,
-            purchaseType = purchaseType,
-            amount = tonumber(amount),
-            paymentMethod = paymentMethod,
-            financed = financed == true
-        })
-    end)
-end
-
 local function createDMVBlips()
     if not Config.DMV.Blip or not Config.DMV.Blip.Enabled then return end
     for _, blip in ipairs(dmvBlips) do RemoveBlip(blip) end
@@ -52,8 +31,7 @@ local function createDMVBlips()
 end
 
 local function createDMVPeds()
-    local modelName = Config.DMV.PedModel or 's_m_m_fiboffice_01'
-    local model = joaat(modelName)
+    local model = joaat(Config.DMV.PedModel or 's_m_m_fiboffice_01')
     RequestModel(model)
     while not HasModelLoaded(model) do Wait(50) end
 
@@ -98,9 +76,7 @@ CreateThread(function()
                     BeginTextCommandDisplayHelp('STRING')
                     AddTextComponentSubstringPlayerName('Press ~INPUT_CONTEXT~ to speak with the DMV clerk')
                     EndTextCommandDisplayHelp(0, false, true, -1)
-                    if IsControlJustReleased(0, 38) then
-                        STDMV.Open()
-                    end
+                    if IsControlJustReleased(0, 38) then STDMV.Open() end
                 end
             end
         end
@@ -110,9 +86,7 @@ end)
 
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end
-    for _, ped in ipairs(dmvPeds) do
-        if DoesEntityExist(ped) then DeletePed(ped) end
-    end
+    for _, ped in ipairs(dmvPeds) do if DoesEntityExist(ped) then DeletePed(ped) end end
     for _, blip in ipairs(dmvBlips) do RemoveBlip(blip) end
     SetNuiFocus(false, false)
 end)
@@ -122,7 +96,6 @@ RegisterNUICallback('close', function(_, cb)
     SendNUIMessage({ action = 'close' })
     cb({ ok = true })
 end)
-
 RegisterNUICallback('load', function(_, cb) TriggerServerEvent('st-core:server:dmvData'); cb({ ok = true }) end)
 RegisterNUICallback('registerVehicle', function(data, cb) TriggerServerEvent('st-core:server:registerVehicle', data); cb({ ok = true }) end)
 RegisterNUICallback('renewRegistration', function(data, cb) TriggerServerEvent('st-core:server:renewRegistration', data); cb({ ok = true }) end)
