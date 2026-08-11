@@ -1,4 +1,6 @@
 STDMV = {}
+local dmvPeds = {}
+local dmvBlips = {}
 
 function STDMV.Open()
     SetNuiFocus(true, true)
@@ -10,8 +12,6 @@ RegisterNetEvent('st-core:client:openDMV', function() STDMV.Open() end)
 RegisterCommand(Config.DMV.Command or 'dmv', function() STDMV.Open() end, false)
 
 -- JG Dealerships v2 purchase hook.
--- JG's documented purchase callback supplies vehicle, plate, purchaseType, amount, paymentMethod and financed.
--- We only forward the plate/model as a lookup hint; ownership and the authoritative vehicle record are resolved server-side.
 if Config.Integrations and Config.Integrations.JGDealershipsV2 and Config.Integrations.JGDealershipsV2.Enabled then
     RegisterNetEvent(Config.Integrations.JGDealershipsV2.PurchaseEvent, function(vehicle, plate, purchaseType, amount, paymentMethod, financed)
         local model
@@ -32,26 +32,89 @@ if Config.Integrations and Config.Integrations.JGDealershipsV2 and Config.Integr
     end)
 end
 
+local function createDMVBlips()
+    if not Config.DMV.Blip or not Config.DMV.Blip.Enabled then return end
+    for _, blip in ipairs(dmvBlips) do RemoveBlip(blip) end
+    dmvBlips = {}
+
+    for _, location in ipairs(Config.DMV.Locations or {}) do
+        local blip = AddBlipForCoord(location.x, location.y, location.z)
+        SetBlipSprite(blip, Config.DMV.Blip.Sprite or 498)
+        SetBlipDisplay(blip, 4)
+        SetBlipScale(blip, Config.DMV.Blip.Scale or 0.8)
+        SetBlipColour(blip, Config.DMV.Blip.Color or 3)
+        SetBlipAsShortRange(blip, true)
+        BeginTextCommandSetBlipName('STRING')
+        AddTextComponentString(Config.DMV.Blip.Name or 'Department of Motor Vehicles')
+        EndTextCommandSetBlipName(blip)
+        dmvBlips[#dmvBlips + 1] = blip
+    end
+end
+
+local function createDMVPeds()
+    local modelName = Config.DMV.PedModel or 's_m_m_fiboffice_01'
+    local model = joaat(modelName)
+    RequestModel(model)
+    while not HasModelLoaded(model) do Wait(50) end
+
+    for _, ped in ipairs(dmvPeds) do
+        if DoesEntityExist(ped) then DeletePed(ped) end
+    end
+    dmvPeds = {}
+
+    for _, location in ipairs(Config.DMV.Locations or {}) do
+        local ped = CreatePed(4, model, location.x, location.y, location.z - 1.0, location.heading or 0.0, false, false)
+        SetEntityAsMissionEntity(ped, true, true)
+        SetEntityInvincible(ped, true)
+        FreezeEntityPosition(ped, true)
+        SetBlockingOfNonTemporaryEvents(ped, true)
+        SetPedCanRagdoll(ped, false)
+        SetPedFleeAttributes(ped, 0, false)
+        SetPedCombatAttributes(ped, 46, true)
+        TaskStartScenarioInPlace(ped, Config.DMV.PedScenario or 'WORLD_HUMAN_CLIPBOARD', 0, true)
+        dmvPeds[#dmvPeds + 1] = ped
+    end
+
+    SetModelAsNoLongerNeeded(model)
+end
+
 CreateThread(function()
+    Wait(1000)
+    createDMVBlips()
+    createDMVPeds()
+
     while true do
         local wait = 1000
-        local ped = PlayerPedId()
-        local coords = GetEntityCoords(ped)
-        for _, location in ipairs(Config.DMV.Locations or {}) do
+        local playerPed = PlayerPedId()
+        local coords = GetEntityCoords(playerPed)
+        local interactionDistance = Config.DMV.InteractionDistance or 2.0
+
+        for index, location in ipairs(Config.DMV.Locations or {}) do
             local distance = #(coords - vector3(location.x, location.y, location.z))
-            if distance < 20.0 then
+            if distance < 15.0 then
                 wait = 0
-                DrawMarker(2, location.x, location.y, location.z + 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.25, 0.25, 60, 150, 255, 180, false, true, 2, nil, nil, false)
-                if distance < 2.0 then
+                local ped = dmvPeds[index]
+                if ped and DoesEntityExist(ped) and distance < interactionDistance then
                     BeginTextCommandDisplayHelp('STRING')
-                    AddTextComponentSubstringPlayerName('Press ~INPUT_CONTEXT~ to open the DMV')
+                    AddTextComponentSubstringPlayerName('Press ~INPUT_CONTEXT~ to speak with the DMV clerk')
                     EndTextCommandDisplayHelp(0, false, true, -1)
-                    if IsControlJustReleased(0, 38) then STDMV.Open() end
+                    if IsControlJustReleased(0, 38) then
+                        STDMV.Open()
+                    end
                 end
             end
         end
         Wait(wait)
     end
+end)
+
+AddEventHandler('onResourceStop', function(resource)
+    if resource ~= GetCurrentResourceName() then return end
+    for _, ped in ipairs(dmvPeds) do
+        if DoesEntityExist(ped) then DeletePed(ped) end
+    end
+    for _, blip in ipairs(dmvBlips) do RemoveBlip(blip) end
+    SetNuiFocus(false, false)
 end)
 
 RegisterNUICallback('close', function(_, cb)
