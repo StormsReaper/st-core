@@ -4,7 +4,7 @@ game 'gta5'
 name 'st-core'
 author 'StormsReaper'
 description 'Storms Technologies core framework for FiveM.'
-version '0.3.0'
+version '0.4.0'
 
 lua54 'yes'
 
@@ -28,7 +28,8 @@ server_scripts {
     'server/purchases.lua',
     'server/vehicles.lua',
     'server/insurance.lua',
-    'server/dmv.lua'
+    'server/dmv.lua',
+    'integrations/jg-dealerships/server.lua'
 }
 
 files {
