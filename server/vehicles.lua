@@ -21,10 +21,12 @@ local function getFramework()
     return nil
 end
 
+local function registrationPlateExists(plate)
+    return MySQL.single.await('SELECT id FROM st_vehicle_registrations WHERE plate = ? LIMIT 1', { plate }) ~= nil
+end
+
 local function plateExists(plate)
-    if MySQL.single.await('SELECT id FROM st_vehicle_registrations WHERE plate = ? LIMIT 1', { plate }) then
-        return true
-    end
+    if registrationPlateExists(plate) then return true end
 
     local framework = getFramework()
     if framework == 'qbcore' then
@@ -119,7 +121,7 @@ function STVehicles.RegisterVehicle(data)
     local isCustom = plate ~= nil
     if isCustom then
         if not STValidation.IsCustomPlate(plate) then return false, 'invalid_custom_plate' end
-        if plateExists(plate) then return false, 'plate_already_in_use' end
+        if registrationPlateExists(plate) then return false, 'plate_already_in_use' end
     else
         plate = generateUniquePlate()
         if not plate then return false, 'plate_generation_failed' end
