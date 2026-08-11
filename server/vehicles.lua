@@ -15,8 +15,25 @@ local function generateStandardPlate()
     return ('%s %s'):format(randomChars(3, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), randomChars(3, '0123456789'))
 end
 
+local function getFramework()
+    if GetResourceState('qb-core') == 'started' then return 'qbcore' end
+    if GetResourceState('es_extended') == 'started' then return 'esx' end
+    return nil
+end
+
 local function plateExists(plate)
-    return MySQL.single.await('SELECT id FROM st_vehicle_registrations WHERE plate = ? LIMIT 1', { plate }) ~= nil
+    if MySQL.single.await('SELECT id FROM st_vehicle_registrations WHERE plate = ? LIMIT 1', { plate }) then
+        return true
+    end
+
+    local framework = getFramework()
+    if framework == 'qbcore' then
+        return MySQL.single.await('SELECT plate FROM player_vehicles WHERE plate = ? LIMIT 1', { plate }) ~= nil
+    elseif framework == 'esx' then
+        return MySQL.single.await('SELECT plate FROM owned_vehicles WHERE plate = ? LIMIT 1', { plate }) ~= nil
+    end
+
+    return false
 end
 
 local function generateUniquePlate()
@@ -24,12 +41,6 @@ local function generateUniquePlate()
         local plate = generateStandardPlate()
         if not plateExists(plate) then return plate end
     end
-    return nil
-end
-
-local function getFramework()
-    if GetResourceState('qb-core') == 'started' then return 'qbcore' end
-    if GetResourceState('es_extended') == 'started' then return 'esx' end
     return nil
 end
 
@@ -84,12 +95,12 @@ function STVehicles.UpdateOwnedVehiclePlate(ownerIdentifier, oldPlate, newPlate)
     local framework = getFramework()
 
     if framework == 'qbcore' then
-        local collision = MySQL.single.await('SELECT id FROM player_vehicles WHERE plate = ? LIMIT 1', { newPlate })
+        local collision = MySQL.single.await('SELECT plate FROM player_vehicles WHERE plate = ? LIMIT 1', { newPlate })
         if collision then return false, 'plate_already_in_framework_database' end
         local affected = MySQL.update.await('UPDATE player_vehicles SET plate = ? WHERE citizenid = ? AND plate = ?', { newPlate, ownerIdentifier, oldPlate })
         return affected == 1, affected == 1 and nil or 'framework_vehicle_update_failed'
     elseif framework == 'esx' then
-        local collision = MySQL.single.await('SELECT id FROM owned_vehicles WHERE plate = ? LIMIT 1', { newPlate })
+        local collision = MySQL.single.await('SELECT plate FROM owned_vehicles WHERE plate = ? LIMIT 1', { newPlate })
         if collision then return false, 'plate_already_in_framework_database' end
         local affected = MySQL.update.await('UPDATE owned_vehicles SET plate = ? WHERE owner = ? AND plate = ?', { newPlate, ownerIdentifier, oldPlate })
         return affected == 1, affected == 1 and nil or 'framework_vehicle_update_failed'
