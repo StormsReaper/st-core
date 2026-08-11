@@ -1,42 +1,17 @@
-STSales = { active = false }
-
-local function closestPlayer(maxDistance)
-    local players, myPed = GetActivePlayers(), PlayerPedId(); local myCoords=GetEntityCoords(myPed); local closest,closestDistance
-    for _,player in ipairs(players) do
-        local ped=GetPlayerPed(player)
-        if ped~=myPed then local distance= #(myCoords-GetEntityCoords(ped));if distance<=(maxDistance or Config.Sales.BuyerDistance) and (not closestDistance or distance<closestDistance) then closest,closestDistance=GetPlayerServerId(player),distance end end
-    end
-    return closest
-end
-local function closestVehicle(maxDistance)
-    local ped=PlayerPedId();local coords=GetEntityCoords(ped);local vehicle=GetClosestVehicle(coords.x,coords.y,coords.z,maxDistance or Config.Sales.VehicleDistance,0,71)
-    if vehicle==0 or not DoesEntityExist(vehicle) or #(coords-GetEntityCoords(vehicle))>(maxDistance or Config.Sales.VehicleDistance) then return nil end
-    return vehicle
-end
-function STSales.UseContract(data,slot)
-    if not data then return end
-    exports.ox_inventory:useItem(data,function(usedData)
-        if not usedData then return end
-        local metadata=usedData.metadata or data.metadata or {};local contractId=metadata.contract_id
-        if not contractId then return end
-        local vehicle,buyer
-        if metadata.status=='draft' or metadata.status=='seller_signed' then
-            vehicle=closestVehicle(Config.Sales.VehicleDistance);buyer=closestPlayer(Config.Sales.BuyerDistance)
-        end
-        TriggerServerEvent('st-core:server:useSaleContract',{contractId=contractId,slot=slot,plate=vehicle and GetVehicleNumberPlateText(vehicle) or nil,buyerServerId=buyer})
-    end)
-end
+STSales={active=false}
+local function closestPlayer(maxDistance)local players,myPed=GetActivePlayers(),PlayerPedId();local myCoords=GetEntityCoords(myPed);local closest,closestDistance;for _,player in ipairs(players)do local ped=GetPlayerPed(player);if ped~=myPed then local distance=#(myCoords-GetEntityCoords(ped));if distance<=(maxDistance or Config.Sales.BuyerDistance)and(not closestDistance or distance<closestDistance)then closest,closestDistance=GetPlayerServerId(player),distance end end end;return closest end
+local function closestVehicle(maxDistance)local ped=PlayerPedId();local coords=GetEntityCoords(ped);local vehicle=GetClosestVehicle(coords.x,coords.y,coords.z,maxDistance or Config.Sales.VehicleDistance,0,71);if vehicle==0 or not DoesEntityExist(vehicle)or#(coords-GetEntityCoords(vehicle))>(maxDistance or Config.Sales.VehicleDistance)then return nil end;return vehicle end
+function STSales.UseContract(data,slot)if not data then return end;exports.ox_inventory:useItem(data,function(usedData)if not usedData then return end;local metadata=usedData.metadata or data.metadata or{};local contractId=metadata.contract_id;if not contractId then return end;local vehicle,buyer;if metadata.status=='draft'or metadata.status=='seller_signed'then vehicle=closestVehicle(Config.Sales.VehicleDistance);buyer=closestPlayer(Config.Sales.BuyerDistance)end;TriggerServerEvent('st-core:server:useSaleContract',{contractId=contractId,slot=slot,plate=vehicle and GetVehicleNumberPlateText(vehicle)or nil,buyerServerId=buyer})end)end
 exports('useVehicleSaleContract',STSales.UseContract)
-RegisterNetEvent('st-core:client:saleContract',function(contract) STSales.active=true;SetNuiFocus(true,true);SendNUIMessage({action='saleContract',contract=contract}) end)
-RegisterNetEvent('st-core:client:saleContractResult',function(result) SendNUIMessage({action='saleContractResult',result=result}) end)
-RegisterNUICallback('saleContractClose',function(_,cb) STSales.active=false;SetNuiFocus(false,false);cb({ok=true}) end)
-RegisterNUICallback('saleContractSellerSign',function(data,cb) TriggerServerEvent('st-core:server:sellerSignSaleContract',data);cb({ok=true}) end)
-RegisterNUICallback('saleContractBuyerSign',function(data,cb) TriggerServerEvent('st-core:server:buyerSignSaleContract',data);cb({ok=true}) end)
-RegisterNUICallback('saleContractSubmit',function(data,cb) TriggerServerEvent('st-core:server:submitSaleContract',data);cb({ok=true}) end)
-RegisterNUICallback('saleContractIssue',function(_,cb) TriggerServerEvent('st-core:server:issueSaleContract');cb({ok=true}) end)
-RegisterCommand('dmvcontract',function()
-    local coords=GetEntityCoords(PlayerPedId());local atDMV=false
-    for _,location in ipairs(Config.DMV.Locations or {}) do if #(coords-vector3(location.x,location.y,location.z))<=4.0 then atDMV=true break end end
-    if atDMV then TriggerServerEvent('st-core:server:issueSaleContract') end
-end,false)
-CreateThread(function() while true do Wait(1000);if STSales.active and IsControlJustReleased(0,322) then STSales.active=false;SetNuiFocus(false,false);SendNUIMessage({action='saleContractClose'}) end end end)
+RegisterNetEvent('st-core:client:saleContract',function(contract)
+ if contract.status=='seller_signed'and contract.sellerServerId==GetPlayerServerId(PlayerId())then STSales.active=false;SetNuiFocus(false,false);SendNUIMessage({action='saleContractClose'});TriggerEvent('chat:addMessage',{args={'DMV',('Seller signature recorded. Give contract %s to the buyer.'):format(contract.contractNumber)}});return end
+ STSales.active=true;SetNuiFocus(true,true);SendNUIMessage({action='saleContract',contract=contract})
+end)
+RegisterNetEvent('st-core:client:saleContractResult',function(result)SendNUIMessage({action='saleContractResult',result=result})end)
+RegisterNUICallback('saleContractClose',function(_,cb)STSales.active=false;SetNuiFocus(false,false);cb({ok=true})end)
+RegisterNUICallback('saleContractSellerSign',function(data,cb)TriggerServerEvent('st-core:server:sellerSignSaleContract',data);cb({ok=true})end)
+RegisterNUICallback('saleContractBuyerSign',function(data,cb)TriggerServerEvent('st-core:server:buyerSignSaleContract',data);cb({ok=true})end)
+RegisterNUICallback('saleContractSubmit',function(data,cb)TriggerServerEvent('st-core:server:submitSaleContract',data);cb({ok=true})end)
+RegisterNUICallback('saleContractIssue',function(_,cb)TriggerServerEvent('st-core:server:issueSaleContract');cb({ok=true})end)
+RegisterCommand('dmvcontract',function()local coords=GetEntityCoords(PlayerPedId());local atDMV=false;for _,location in ipairs(Config.DMV.Locations or{})do if #(coords-vector3(location.x,location.y,location.z))<=4.0 then atDMV=true break end end;if atDMV then TriggerServerEvent('st-core:server:issueSaleContract')end end,false)
+CreateThread(function()while true do Wait(1000);if STSales.active and IsControlJustReleased(0,322)then STSales.active=false;SetNuiFocus(false,false);SendNUIMessage({action='saleContractClose'})end end end)
