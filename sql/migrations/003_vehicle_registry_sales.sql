@@ -12,8 +12,7 @@ ALTER TABLE st_vehicle_registrations
     ADD COLUMN financed TINYINT(1) NOT NULL DEFAULT 0 AFTER payment_method,
     ADD COLUMN dealership VARCHAR(120) NULL AFTER financed;
 
-ALTER TABLE st_vehicle_registrations
-    ADD UNIQUE KEY uq_vehicle_registration_vin (vin);
+ALTER TABLE st_vehicle_registrations ADD UNIQUE KEY uq_vehicle_registration_vin (vin);
 
 ALTER TABLE st_vehicle_purchases
     ADD COLUMN temporary_plate VARCHAR(12) NULL AFTER vehicle_identifier,
@@ -40,12 +39,9 @@ CREATE TABLE IF NOT EXISTS st_vehicle_records (
     insurance_expires_at BIGINT UNSIGNED NULL,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_st_vehicle_records_identifier (vehicle_identifier),
-    UNIQUE KEY uq_st_vehicle_records_vin (vin),
-    UNIQUE KEY uq_st_vehicle_records_plate (plate),
-    KEY idx_st_vehicle_records_owner (owner_identifier),
-    KEY idx_st_vehicle_records_name (owner_name)
+    PRIMARY KEY (id), UNIQUE KEY uq_st_vehicle_records_identifier (vehicle_identifier),
+    UNIQUE KEY uq_st_vehicle_records_vin (vin), UNIQUE KEY uq_st_vehicle_records_plate (plate),
+    KEY idx_st_vehicle_records_owner (owner_identifier), KEY idx_st_vehicle_records_name (owner_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS st_vehicle_sale_contracts (
@@ -65,18 +61,15 @@ CREATE TABLE IF NOT EXISTS st_vehicle_sale_contracts (
     buyer_signature LONGTEXT NULL,
     seller_signed_at BIGINT UNSIGNED NULL,
     buyer_signed_at BIGINT UNSIGNED NULL,
-    status ENUM('draft','seller_signed','completed','cancelled','expired') NOT NULL DEFAULT 'draft',
+    status ENUM('draft','seller_signed','buyer_signed','completed','cancelled','expired') NOT NULL DEFAULT 'draft',
     issued_at BIGINT UNSIGNED NOT NULL,
     expires_at BIGINT UNSIGNED NOT NULL,
     completed_at BIGINT UNSIGNED NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_sale_contract_number (contract_number),
-    KEY idx_sale_contract_vehicle (vehicle_identifier),
-    KEY idx_sale_contract_seller (seller_identifier),
-    KEY idx_sale_contract_buyer (buyer_identifier),
-    KEY idx_sale_contract_status (status)
+    PRIMARY KEY (id), UNIQUE KEY uq_sale_contract_number (contract_number),
+    KEY idx_sale_contract_vehicle (vehicle_identifier), KEY idx_sale_contract_seller (seller_identifier),
+    KEY idx_sale_contract_buyer (buyer_identifier), KEY idx_sale_contract_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS st_vehicle_transfer_audit (
@@ -92,10 +85,8 @@ CREATE TABLE IF NOT EXISTS st_vehicle_transfer_audit (
     old_plate VARCHAR(12) NOT NULL,
     new_plate VARCHAR(12) NOT NULL,
     transferred_at BIGINT UNSIGNED NOT NULL,
-    PRIMARY KEY (id),
-    KEY idx_transfer_vehicle (vehicle_identifier),
-    KEY idx_transfer_old_owner (old_owner_identifier),
-    KEY idx_transfer_new_owner (new_owner_identifier),
+    PRIMARY KEY (id), KEY idx_transfer_vehicle (vehicle_identifier),
+    KEY idx_transfer_old_owner (old_owner_identifier), KEY idx_transfer_new_owner (new_owner_identifier),
     CONSTRAINT fk_transfer_contract FOREIGN KEY (contract_id) REFERENCES st_vehicle_sale_contracts(id)
         ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -108,7 +99,6 @@ CREATE TABLE IF NOT EXISTS st_dmv_document_audit (
     action VARCHAR(40) NOT NULL,
     metadata LONGTEXT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    KEY idx_dmv_document_audit_document (document_type, document_id),
+    PRIMARY KEY (id), KEY idx_dmv_document_audit_document (document_type, document_id),
     KEY idx_dmv_document_audit_actor (actor_identifier)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
