@@ -1,58 +1,22 @@
 STInsuranceClaims = {}
-
-local function claimNumber()
-    for _ = 1, 50 do
-        local n = ('CLM-%08d'):format(math.random(0, 99999999))
-        if not MySQL.single.await('SELECT id FROM st_insurance_claims WHERE claim_number = ? LIMIT 1', { n }) then return n end
-    end
-end
-
-function STInsuranceClaims.Get(id) return MySQL.single.await('SELECT * FROM st_insurance_claims WHERE id = ? LIMIT 1', { id }) end
-function STInsuranceClaims.GetByNumber(n) return MySQL.single.await('SELECT * FROM st_insurance_claims WHERE claim_number = ? LIMIT 1', { n }) end
-function STInsuranceClaims.GetPlayerVehicles(source)
-    local QBCore = exports['qb-core']:GetCoreObject()
-    local Player = QBCore.Functions.GetPlayer(source)
-    if not Player then return {} end
-    return MySQL.query.await([[SELECT pv.plate, pv.vehicle, r.vehicle_identifier, r.registration_number, r.status AS registration_status, r.expires_at AS registration_expires_at, i.id AS policy_id, i.policy_number, i.status AS insurance_status, i.expires_at AS insurance_expires_at, ip.name AS insurance_plan FROM player_vehicles pv LEFT JOIN st_vehicle_registrations r ON r.plate = UPPER(TRIM(pv.plate)) AND r.owner_identifier = pv.citizenid LEFT JOIN st_vehicle_insurance i ON i.vehicle_identifier = r.vehicle_identifier LEFT JOIN st_insurance_plans ip ON ip.id = i.plan_id WHERE pv.citizenid = ? ORDER BY pv.plate ASC]], { Player.PlayerData.citizenid })
-end
-function STInsuranceClaims.CreateForPlayer(source, data)
-    if type(data) ~= 'table' then return false, 'invalid_data' end
-    local QBCore = exports['qb-core']:GetCoreObject()
-    local Player = QBCore.Functions.GetPlayer(source)
-    if not Player then return false, 'player_not_found' end
-    local plate = STValidation.NormalizePlate(data.plate)
-    if not plate then return false, 'invalid_plate' end
-    local vehicle = MySQL.single.await([[SELECT pv.plate, pv.vehicle, r.vehicle_identifier, i.id AS policy_id, i.policy_number, i.status AS insurance_status, i.expires_at AS insurance_expires_at FROM player_vehicles pv LEFT JOIN st_vehicle_registrations r ON r.plate = UPPER(TRIM(pv.plate)) AND r.owner_identifier = pv.citizenid LEFT JOIN st_vehicle_insurance i ON i.vehicle_identifier = r.vehicle_identifier WHERE pv.citizenid = ? AND UPPER(TRIM(pv.plate)) = ? LIMIT 1]], { Player.PlayerData.citizenid, plate })
-    if not vehicle or not vehicle.policy_id then return false, 'vehicle_not_insured' end
-    if vehicle.insurance_status ~= 'active' or tonumber(vehicle.insurance_expires_at or 0) < os.time() then return false, 'insurance_not_active' end
-    local description = type(data.description) == 'string' and data.description:sub(1, 2000) or ''
-    if #description < 10 then return false, 'description_too_short' end
-    local incidentType = type(data.incidentType) == 'string' and data.incidentType:sub(1, 40) or 'other'
-    local incidentAt = tonumber(data.incidentAt) or os.time()
-    local location = type(data.location) == 'string' and data.location:sub(1, 200) or nil
-    local n = claimNumber()
-    if not n then return false, 'number_generation_failed' end
-    local claimantName = ((Player.PlayerData.charinfo and Player.PlayerData.charinfo.firstname) or '') .. ' ' .. ((Player.PlayerData.charinfo and Player.PlayerData.charinfo.lastname) or '')
-    local id = MySQL.insert.await([[INSERT INTO st_insurance_claims (claim_number, policy_id, vehicle_identifier, claimant_identifier, claimant_name, other_vehicle_identifier, other_plate, fault_percent, damage_estimate, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]], { n, vehicle.policy_id, vehicle.vehicle_identifier, Player.PlayerData.citizenid, claimantName, data.otherVehicleIdentifier, data.otherPlate, tonumber(data.faultPercent) or 0, tonumber(data.damageEstimate) or 0, ('[%s]%s%s'):format(incidentType, location and (' Location: ' .. location .. ' |') or '', description) })
-    if not id then return false, 'database_insert_failed' end
-    return true, STInsuranceClaims.Get(id)
-end
-function STInsuranceClaims.SetStatus(id, status, payout) local ok = MySQL.update.await('UPDATE st_insurance_claims SET status = ?, payout = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', { status, tonumber(payout) or 0, id }) == 1; return ok, ok and STInsuranceClaims.Get(id) or 'database_update_failed' end
-function STInsuranceClaims.GetVehicleHistory(vehicleIdentifier) return MySQL.query.await('SELECT * FROM st_insurance_claims WHERE vehicle_identifier = ? ORDER BY created_at DESC', { vehicleIdentifier }) end
-
-RegisterNetEvent('st-core:server:claims:getVehicles', function()
-    local source = source
-    TriggerClientEvent('st-core:client:claims:vehicles', source, STInsuranceClaims.GetPlayerVehicles(source))
-end)
-RegisterNetEvent('st-core:server:claims:submit', function(data)
-    local source = source
-    local ok, result = STInsuranceClaims.CreateForPlayer(source, data)
-    TriggerClientEvent('st-core:client:claims:result', source, ok, result)
-end)
-
-exports('CreateInsuranceClaim', STInsuranceClaims.CreateForPlayer)
-exports('GetInsuranceClaim', STInsuranceClaims.Get)
-exports('GetInsuranceClaimByNumber', STInsuranceClaims.GetByNumber)
-exports('SetInsuranceClaimStatus', STInsuranceClaims.SetStatus)
-exports('GetVehicleInsuranceClaims', STInsuranceClaims.GetVehicleHistory)
-exports('GetPlayerClaimVehicles', STInsuranceClaims.GetPlayerVehicles)
+local STATUS={filed=true,under_review=true,approved=true,denied=true,paid=true,closed=true}
+local function claimNumber()for _=1,50 do local n=('CLM-%08d'):format(math.random(0,99999999));if not MySQL.single.await('SELECT id FROM st_insurance_claims WHERE claim_number=? LIMIT 1',{n})then return n end end end
+local function P(s)local Q=exports['qb-core']:GetCoreObject();return Q.Functions.GetPlayer(s)end
+local function name(p)local c=p and p.PlayerData.charinfo or{};return ((c.firstname or '')..' '..(c.lastname or '')):gsub('^%s*(.-)%s*$','')end
+local function ident(s)local p=P(s);return p and p.PlayerData.citizenid end
+local function reviewer(s)local p=P(s);if not p then return false end;local j=p.PlayerData.job or{};local g=j.grade and(j.grade.level or j.grade)or 0;local roles=Config.InsuranceClaims and Config.InsuranceClaims.ReviewerJobs or{admin=true,insurance_adjuster=true,dmv_adjuster=true};return roles[j.name]==true or(j.name=='police' and tonumber(g)>=tonumber((Config.InsuranceClaims or{}).PoliceReviewGrade or 99))end
+local function audit(id,s,a,n)pcall(function()local p=P(s);MySQL.insert.await('INSERT INTO st_insurance_claim_audit(claim_id,actor_identifier,actor_name,action,notes)VALUES(?,?,?,?,?)',{id,ident(s),name(p),a,n and json.encode(n)or nil})end)end
+function STInsuranceClaims.Get(id)return MySQL.single.await('SELECT * FROM st_insurance_claims WHERE id=? LIMIT 1',{tonumber(id)})end
+function STInsuranceClaims.GetByNumber(n)return MySQL.single.await('SELECT * FROM st_insurance_claims WHERE claim_number=? LIMIT 1',{n})end
+function STInsuranceClaims.GetPlayerVehicles(s)local p=P(s);if not p then return{}end;return MySQL.query.await([[SELECT pv.plate,pv.vehicle,r.vehicle_identifier,r.registration_number,r.status registration_status,r.expires_at registration_expires_at,i.id policy_id,i.policy_number,i.status insurance_status,i.expires_at insurance_expires_at,ip.name insurance_plan FROM player_vehicles pv LEFT JOIN st_vehicle_registrations r ON r.plate=UPPER(TRIM(pv.plate)) AND r.owner_identifier=pv.citizenid LEFT JOIN st_vehicle_insurance i ON i.vehicle_identifier=r.vehicle_identifier AND i.owner_identifier=pv.citizenid LEFT JOIN st_insurance_plans ip ON ip.id=i.plan_id WHERE pv.citizenid=? ORDER BY pv.plate ASC]],{p.PlayerData.citizenid})end
+function STInsuranceClaims.GetPlayerClaims(s)local id=ident(s);if not id then return{}end;return MySQL.query.await('SELECT * FROM st_insurance_claims WHERE claimant_identifier=? ORDER BY created_at DESC',{id})end
+function STInsuranceClaims.GetAudit(id)return MySQL.query.await('SELECT * FROM st_insurance_claim_audit WHERE claim_id=? ORDER BY created_at ASC',{tonumber(id)})end
+function STInsuranceClaims.CreateForPlayer(s,d)if type(d)~='table'then return false,'invalid_data'end;local p=P(s);if not p then return false,'player_not_found'end;local plate=STValidation.NormalizePlate(d.plate);if not plate then return false,'invalid_plate'end;local v=MySQL.single.await([[SELECT pv.plate,pv.vehicle,r.vehicle_identifier,i.id policy_id,i.policy_number,i.status insurance_status,i.expires_at insurance_expires_at FROM player_vehicles pv LEFT JOIN st_vehicle_registrations r ON r.plate=UPPER(TRIM(pv.plate)) AND r.owner_identifier=pv.citizenid LEFT JOIN st_vehicle_insurance i ON i.vehicle_identifier=r.vehicle_identifier AND i.owner_identifier=pv.citizenid WHERE pv.citizenid=? AND UPPER(TRIM(pv.plate))=? LIMIT 1]],{p.PlayerData.citizenid,plate});if not v or not v.policy_id then return false,'vehicle_not_insured'end;if v.insurance_status~='active'or tonumber(v.insurance_expires_at or 0)<os.time()then return false,'insurance_not_active'end;local desc=type(d.description)=='string'and d.description:sub(1,2000)or'';if#desc<10 then return false,'description_too_short'end;local n=claimNumber();if not n then return false,'number_generation_failed'end;local it=type(d.incidentType)=='string'and d.incidentType:sub(1,40)or'other';local loc=type(d.location)=='string'and d.location:sub(1,200)or nil;local id=MySQL.insert.await([[INSERT INTO st_insurance_claims(claim_number,policy_id,vehicle_identifier,claimant_identifier,claimant_name,other_vehicle_identifier,other_plate,fault_percent,damage_estimate,description,status)VALUES(?,?,?,?,?,?,?,?,?,?, 'filed')]],{n,v.policy_id,v.vehicle_identifier,p.PlayerData.citizenid,name(p),d.otherVehicleIdentifier,d.otherPlate,math.max(0,math.min(100,tonumber(d.faultPercent)or 0)),math.max(0,tonumber(d.damageEstimate)or 0),('[%s]%s%s'):format(it,loc and(' Location: '..loc..' |')or'',desc)});if not id then return false,'database_insert_failed'end;audit(id,s,'filed',{claim_number=n});return true,STInsuranceClaims.Get(id)end
+function STInsuranceClaims.Review(id,status,payout,notes,s)if not reviewer(s)then return false,'not_authorized'end;if not STATUS[status]then return false,'invalid_status'end;local c=STInsuranceClaims.Get(id);if not c then return false,'claim_not_found'end;if status=='under_review'and c.status~='filed'then return false,'invalid_transition'end;if status=='approved'and c.status~='under_review'then return false,'invalid_transition'end;if status=='denied'and c.status~='under_review'and c.status~='filed'then return false,'invalid_transition'end;if status=='paid'and c.status~='approved'then return false,'invalid_transition'end;if status=='closed'and c.status~='paid'and c.status~='denied'then return false,'invalid_transition'end;local amount=math.max(0,tonumber(payout)or 0);if status=='paid' then if amount<=0 then return false,'payout_required'end;if c.payout_processed_at then return false,'payout_already_processed'end;local target;for _,x in ipairs(GetPlayers())do local pp=P(tonumber(x));if pp and pp.PlayerData.citizenid==c.claimant_identifier then target=tonumber(x);break end end;if not target then return false,'claimant_not_online'end;local ok,e=STPayments.Credit(target,amount,'Insurance claim payout '..c.claim_number);if not ok then return false,e or'payment_failed'end;if MySQL.update.await("UPDATE st_insurance_claims SET status='paid',payout=?,payout_processed_at=?,adjuster_notes=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='approved' AND payout_processed_at IS NULL",{amount,os.time(),notes and notes:sub(1,2000)or nil,id})~=1 then STPayments.Remove(target,amount,'bank','Insurance payout reversal '..c.claim_number);return false,'claim_state_changed'end else if MySQL.update.await('UPDATE st_insurance_claims SET status=?,payout=?,adjuster_notes=?,updated_at=CURRENT_TIMESTAMP WHERE id=?',{status,amount,notes and notes:sub(1,2000)or nil,id})~=1 then return false,'database_update_failed'end end;audit(id,s,'status_changed',{status=status,payout=amount,notes=notes});return true,STInsuranceClaims.Get(id)end
+RegisterCommand('insclaim',function(s)if s==0 then return end;TriggerClientEvent('st-core:client:openInsuranceClaim',s)end,false)
+RegisterNetEvent('st-core:server:claims:getVehicles',function()local s=source;TriggerClientEvent('st-core:client:claims:vehicles',s,STInsuranceClaims.GetPlayerVehicles(s))end)
+RegisterNetEvent('st-core:server:claims:getMine',function()local s=source;TriggerClientEvent('st-core:client:claims:list',s,STInsuranceClaims.GetPlayerClaims(s))end)
+RegisterNetEvent('st-core:server:claims:getAudit',function(id)local s=source;if not reviewer(s)then return TriggerClientEvent('st-core:client:claims:audit',s,false,'not_authorized')end;TriggerClientEvent('st-core:client:claims:audit',s,true,STInsuranceClaims.GetAudit(id))end)
+RegisterNetEvent('st-core:server:claims:submit',function(d)local s=source;local ok,r=STInsuranceClaims.CreateForPlayer(s,d);TriggerClientEvent('st-core:client:claims:result',s,ok,r)end)
+RegisterNetEvent('st-core:server:claims:review',function(d)local s=source;if type(d)~='table'then return end;local ok,r=STInsuranceClaims.Review(tonumber(d.claimId),d.status,tonumber(d.payout),d.notes,s);TriggerClientEvent('st-core:client:claims:reviewResult',s,ok,r)end)
+exports('CreateInsuranceClaim',STInsuranceClaims.CreateForPlayer);exports('GetInsuranceClaim',STInsuranceClaims.Get);exports('GetInsuranceClaimByNumber',STInsuranceClaims.GetByNumber);exports('ReviewInsuranceClaim',STInsuranceClaims.Review);exports('GetVehicleInsuranceClaims',function(v)return MySQL.query.await('SELECT * FROM st_insurance_claims WHERE vehicle_identifier=? ORDER BY created_at DESC',{v})end);exports('GetPlayerClaimVehicles',STInsuranceClaims.GetPlayerVehicles)
