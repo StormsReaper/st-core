@@ -55,6 +55,7 @@ Config.Sales = {
     AutoCancelExpiredContracts = true,
 }
 
+-- JG is an optional purchase-recording integration. DMV registration never depends on it.
 Config.Integrations = {
     JGDealershipsV2 = {
         Enabled = true,
