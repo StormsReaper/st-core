@@ -1,5 +1,6 @@
--- st-core v0.5.2: repair/create the vehicle purchase table used by the legacy/JG pending purchase flow.
--- Run this once against the same database used by QBCore/oxmysql.
+-- st-core vehicle purchase tracking.
+-- Plate-based DMV lookup does not depend on this table, but the pending-purchase
+-- UI and JG integration use it when available.
 
 CREATE TABLE IF NOT EXISTS st_vehicle_purchases (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
