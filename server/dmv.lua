@@ -1,6 +1,14 @@
 local function result(ok, message, data) return { ok=ok, message=message, data=data } end
 local function notify(source,payload) TriggerClientEvent('st-core:client:dmvResult',source,payload) end
 local function syncFrameworkPlate(ownerIdentifier,oldPlate,newPlate) if not oldPlate or oldPlate==newPlate then return true end return STVehicles.UpdateOwnedVehiclePlate(ownerIdentifier,oldPlate,newPlate) end
+local function lookupPlateForSource(source,data)
+ if type(data)~='table' then return false,'Invalid request.' end
+ local identifier=STPayments.GetIdentifier(source); if not identifier then return false,'Unable to identify your character.' end
+ local plate=STValidation.NormalizePlate(data.plate); if plate=='' then return false,'Enter the vehicle plate number.' end
+ local lookup,err=STVehicles.LookupOwnedVehicleForDMV(identifier,STPayments.GetName(source),plate); if not lookup then return false,err=='vehicle_not_found_or_not_owned' and 'No vehicle with that plate is registered to your character.' or 'Unable to look up that plate.' end
+ if lookup.alreadyRegistered then return true,'This vehicle is already registered.',{lookup=lookup} end
+ return true,'Vehicle found. Review the information before registering it.',{lookup=lookup}
+end
 RegisterNetEvent('st-core:server:dmvOpen',function() TriggerEvent('st-core:server:dmvData',source) end)
 RegisterNetEvent('st-core:server:dmvData',function(targetSource)
  local source=targetSource or source; local identifier=STPayments.GetIdentifier(source); if not identifier then return notify(source,result(false,'Unable to identify your character.')) end
@@ -10,11 +18,10 @@ RegisterNetEvent('st-core:server:dmvData',function(targetSource)
  TriggerClientEvent('st-core:client:dmvData',source,{pendingPurchases=pending,registrations=registrations,insurance=policies,plans=STInsurance.GetPlans(),fees={customPlate=Config.Plate.CustomPlateFee,registration=Config.Payment.RegistrationFee,transfer=Config.Registration.TransferFee}})
 end)
 RegisterNetEvent('st-core:server:lookupVehicleByPlate',function(data)
- local source=source; if type(data)~='table' then return notify(source,result(false,'Invalid request.')) end; local identifier=STPayments.GetIdentifier(source); if not identifier then return notify(source,result(false,'Unable to identify your character.')) end
- local plate=STValidation.NormalizePlate(data.plate); if plate=='' then return notify(source,result(false,'Enter the vehicle plate number.')) end
- local lookup,err=STVehicles.LookupOwnedVehicleForDMV(identifier,STPayments.GetName(source),plate); if not lookup then return notify(source,result(false,err=='vehicle_not_found_or_not_owned' and 'No vehicle with that plate is registered to your character.' or 'Unable to look up that plate.')) end
- if lookup.alreadyRegistered then return notify(source,result(true,'This vehicle is already registered.',{lookup=lookup})) end
- notify(source,result(true,'Vehicle found. Review the information before registering it.',{lookup=lookup}))
+ local source=source;local ok,msg,dataOut=lookupPlateForSource(source,data);notify(source,result(ok,msg,dataOut))
+end)
+exports['qb-core']:GetCoreObject().Functions.CreateCallback('st-core:server:lookupVehicleByPlate',function(source,cb,data)
+ local ok,msg,dataOut=lookupPlateForSource(source,data);cb(ok,{message=msg,data=dataOut})
 end)
 RegisterNetEvent('st-core:server:registerVehicle',function(data)
  local source=source; if type(data)~='table' then return notify(source,result(false,'Invalid request.')) end; local identifier=STPayments.GetIdentifier(source); if not identifier then return notify(source,result(false,'Unable to identify your character.')) end
