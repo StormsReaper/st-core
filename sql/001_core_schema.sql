@@ -1,6 +1,8 @@
 -- ST-Core foundation schema
--- MySQL 8 / MariaDB compatible
--- Identifiers and server-generated identity values are intentionally separated from character data.
+-- MySQL 8 / MariaDB compatible.
+-- QBCore/ESX vehicle ownership remains the framework source of truth.
+-- st_vehicle_registrations, st_vehicle_insurance, and st_vehicle_records are the ST-Core regulatory layer.
+-- VINs are intentionally not required by ST-Core.
 
 CREATE TABLE IF NOT EXISTS st_players (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -51,10 +53,12 @@ CREATE TABLE IF NOT EXISTS st_characters (
     CONSTRAINT fk_character_player FOREIGN KEY (player_id) REFERENCES st_players(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Legacy ST vehicle cache. It is retained for compatibility with future ST-Core systems,
+-- but VIN is optional and is never used as the authoritative vehicle identifier.
 CREATE TABLE IF NOT EXISTS st_vehicles (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     owner_character_id BIGINT UNSIGNED NULL,
-    vin CHAR(17) NOT NULL,
+    vin CHAR(17) NULL,
     plate VARCHAR(12) NOT NULL,
     plate_type ENUM('standard','custom','government','dealer') NOT NULL DEFAULT 'standard',
     make VARCHAR(50) NULL,
@@ -75,8 +79,8 @@ CREATE TABLE IF NOT EXISTS st_vehicles (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    UNIQUE KEY uq_vehicle_vin (vin),
     UNIQUE KEY uq_vehicle_plate (plate),
+    KEY idx_vehicle_vin (vin),
     KEY idx_vehicle_owner (owner_character_id),
     KEY idx_vehicle_model (model),
     CONSTRAINT fk_vehicle_owner FOREIGN KEY (owner_character_id) REFERENCES st_characters(id) ON DELETE SET NULL
@@ -155,7 +159,6 @@ CREATE TABLE IF NOT EXISTS st_weapon_instances (
     CONSTRAINT fk_weapon_inventory_item FOREIGN KEY (inventory_item_id) REFERENCES st_inventory_items(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- One default player inventory per character. Additional inventories can exist for vehicles, stashes, containers, etc.
 CREATE TABLE IF NOT EXISTS st_character_inventories (
     character_id BIGINT UNSIGNED NOT NULL,
     inventory_id BIGINT UNSIGNED NOT NULL,
