@@ -1,0 +1,10 @@
+local QBCore=exports['qb-core']:GetCoreObject()
+local function request(name,data,cb) QBCore.Functions.TriggerCallback(name,function(ok,result) cb(ok,result) end,data) end
+RegisterNUICallback('unifiedOverview',function(_,cb) request('st-core:server:unified:overview',nil,function(ok,r) cb({ok=ok,data=r}) end) end)
+RegisterNUICallback('unifiedVehicle',function(data,cb) request('st-core:server:unified:vehicle',data.plate,function(ok,r) cb({ok=ok,data=r}) end) end)
+RegisterNUICallback('unifiedLicense',function(_,cb) request('st-core:server:unified:license',nil,function(ok,r) cb({ok=ok,data=r}) end) end)
+RegisterNUICallback('unifiedAppointments',function(_,cb) request('st-core:server:unified:appointments',nil,function(ok,r) cb({ok=ok,data=r}) end) end)
+RegisterNUICallback('unifiedClaims',function(_,cb) request('st-core:server:unified:claims',nil,function(ok,r) cb({ok=ok,data=r}) end) end)
+RegisterNUICallback('unifiedBookAppointment',function(data,cb) request('st-core:server:unified:bookAppointment',data,function(ok,r) cb({ok=ok,data=r}) end) end)
+RegisterNUICallback('unifiedCancelAppointment',function(data,cb) request('st-core:server:unified:cancelAppointment',data.id,function(ok,r) cb({ok=ok,data=r}) end) end)
+RegisterNUICallback('unifiedRenewLicense',function(_,cb) request('st-core:server:unified:renewLicense',nil,function(ok,r) cb({ok=ok,data=r}) end) end)
