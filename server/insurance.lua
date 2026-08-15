@@ -14,90 +14,75 @@ local function getPlan(planId)
     return MySQL.single.await('SELECT * FROM st_insurance_plans WHERE id = ? AND active = 1 LIMIT 1', { planId })
 end
 
-function STInsurance.GetPlan(planId) return getPlan(planId) end
-function STInsurance.GetPlans()
-    return MySQL.query.await('SELECT * FROM st_insurance_plans WHERE active = 1 ORDER BY monthly_premium ASC')
-end
-
 local POLICY_SELECT = [[
     SELECT i.*, p.name AS plan_name, p.description AS plan_description,
            p.coverage_type, p.liability_limit, p.collision_limit,
-           p.comprehensive_limit, p.deductible, r.plate
+           p.comprehensive_limit, p.deductible, r.plate,
+           r.vehicle_model, r.vehicle_display_name, r.owner_name
     FROM st_vehicle_insurance i
     LEFT JOIN st_insurance_plans p ON p.id = i.plan_id
     LEFT JOIN st_vehicle_registrations r ON r.vehicle_identifier = i.vehicle_identifier
 ]]
 
+function STInsurance.GetPlan(planId) return getPlan(planId) end
+function STInsurance.GetPlans() return MySQL.query.await('SELECT * FROM st_insurance_plans WHERE active = 1 ORDER BY monthly_premium ASC') end
 function STInsurance.GetPolicy(vehicleIdentifier)
     if not STValidation.IsIdentifier(vehicleIdentifier) then return nil end
     return MySQL.single.await(POLICY_SELECT .. ' WHERE i.vehicle_identifier = ? ORDER BY i.id DESC LIMIT 1', { vehicleIdentifier })
 end
-
 function STInsurance.GetPolicyByNumber(policyNumber)
     if type(policyNumber) ~= 'string' or #policyNumber > 40 then return nil end
     return MySQL.single.await(POLICY_SELECT .. ' WHERE i.policy_number = ? LIMIT 1', { policyNumber:upper() })
 end
-
+function STInsurance.GetPolicyByPlate(plate)
+    if type(plate) ~= 'string' then return nil end
+    local normalized = STValidation.NormalizePlate(plate)
+    if normalized == '' then return nil end
+    return MySQL.single.await(POLICY_SELECT .. ' WHERE r.plate = ? ORDER BY i.id DESC LIMIT 1', { normalized })
+end
 function STInsurance.IsPolicyActive(policy)
     if not policy or policy.status ~= 'active' then return false end
     local expiresAt = tonumber(policy.expires_at)
     return expiresAt ~= nil and expiresAt >= os.time()
 end
-
 function STInsurance.PurchasePolicy(data)
     if type(data) ~= 'table' then return false, 'invalid_data' end
     if not STValidation.IsIdentifier(data.ownerIdentifier) then return false, 'invalid_owner_identifier' end
     if not STValidation.IsIdentifier(data.vehicleIdentifier) then return false, 'invalid_vehicle_identifier' end
-
     local plan = getPlan(data.planId)
     if not plan then return false, 'invalid_plan' end
     if Config.Insurance.RequireInsurance and tonumber(plan.liability_limit) <= 0 then return false, 'liability_coverage_required' end
-
     local existing = STInsurance.GetPolicy(data.vehicleIdentifier)
     if existing and STInsurance.IsPolicyActive(existing) then return false, 'active_policy_exists' end
-
     local policyNumber = generatePolicyNumber()
     if not policyNumber then return false, 'policy_number_generation_failed' end
-
     local now = os.time()
     local expiresAt = now + ((Config.Insurance.PolicyDurationDays or 30) * 86400)
-    local insertId = MySQL.insert.await([[
-        INSERT INTO st_vehicle_insurance
-            (vehicle_identifier, owner_identifier, policy_number, plan_id, premium, effective_at, expires_at, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
-    ]], { data.vehicleIdentifier, data.ownerIdentifier, policyNumber, plan.id, plan.monthly_premium, now, expiresAt })
-
+    local insertId = MySQL.insert.await([[INSERT INTO st_vehicle_insurance (vehicle_identifier, owner_identifier, policy_number, plan_id, premium, effective_at, expires_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'active')]], { data.vehicleIdentifier, data.ownerIdentifier, policyNumber, plan.id, plan.monthly_premium, now, expiresAt })
     if not insertId then return false, 'database_insert_failed' end
+    STVehicles.SyncVehicleRecord(data.vehicleIdentifier)
     return true, STInsurance.GetPolicy(data.vehicleIdentifier)
 end
-
 function STInsurance.RenewPolicy(vehicleIdentifier)
     local policy = STInsurance.GetPolicy(vehicleIdentifier)
     if not policy then return false, 'policy_not_found' end
     local now = os.time()
     local baseTime = math.max(now, tonumber(policy.expires_at) or now)
     local expiresAt = baseTime + ((Config.Insurance.PolicyDurationDays or 30) * 86400)
-    local affected = MySQL.update.await([[
-        UPDATE st_vehicle_insurance
-        SET effective_at = CASE WHEN status <> 'active' OR expires_at < ? THEN ? ELSE effective_at END,
-            expires_at = ?, status = 'active', updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-    ]], { now, now, expiresAt, policy.id })
+    local affected = MySQL.update.await([[UPDATE st_vehicle_insurance SET effective_at = CASE WHEN status <> 'active' OR expires_at < ? THEN ? ELSE effective_at END, expires_at = ?, status = 'active', updated_at = CURRENT_TIMESTAMP WHERE id = ?]], { now, now, expiresAt, policy.id })
     if affected ~= 1 then return false, 'database_update_failed' end
+    STVehicles.SyncVehicleRecord(vehicleIdentifier)
     return true, STInsurance.GetPolicy(vehicleIdentifier)
 end
-
 function STInsurance.CancelPolicy(vehicleIdentifier, reason)
     local policy = STInsurance.GetPolicy(vehicleIdentifier)
     if not policy then return false, 'policy_not_found' end
-    local affected = MySQL.update.await('UPDATE st_vehicle_insurance SET status = \'cancelled\', cancellation_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', { reason or 'Cancelled', policy.id })
-    return affected == 1, affected == 1 and STInsurance.GetPolicy(vehicleIdentifier) or 'database_update_failed'
+    local affected = MySQL.update.await("UPDATE st_vehicle_insurance SET status = 'cancelled', cancellation_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", { reason or 'Cancelled', policy.id })
+    local success = affected == 1
+    if success then STVehicles.SyncVehicleRecord(vehicleIdentifier) end
+    return success, success and STInsurance.GetPolicy(vehicleIdentifier) or 'database_update_failed'
 end
-
-function STInsurance.IsVehicleInsured(vehicleIdentifier)
-    return STInsurance.IsPolicyActive(STInsurance.GetPolicy(vehicleIdentifier))
-end
-
+function STInsurance.IsVehicleInsured(vehicleIdentifier) return STInsurance.IsPolicyActive(STInsurance.GetPolicy(vehicleIdentifier)) end
 function STInsurance.GetVehicleLegalStatus(vehicleIdentifier)
     local registration = STVehicles.GetRegistration(vehicleIdentifier)
     local policy = STInsurance.GetPolicy(vehicleIdentifier)
@@ -105,10 +90,40 @@ function STInsurance.GetVehicleLegalStatus(vehicleIdentifier)
     local insuranceActive = STInsurance.IsPolicyActive(policy)
     return { registered = registrationActive, insured = insuranceActive, registration = registration, insurance = policy, legal = registrationActive and insuranceActive }
 end
+function STInsurance.GetVehicleInsuranceByPlate(plate)
+    local policy = STInsurance.GetPolicyByPlate(plate)
+    if not policy then return nil end
+    local active = STInsurance.IsPolicyActive(policy)
+    return {
+        insured = active,
+        status = active and 'active' or (policy.status or 'none'),
+        policy_number = policy.policy_number,
+        provider = Config.Insurance.CompanyName or 'Statewide Insurance',
+        coverage = policy.coverage_type,
+        liability_limit = policy.liability_limit,
+        collision_limit = policy.collision_limit,
+        comprehensive_limit = policy.comprehensive_limit,
+        deductible = policy.deductible,
+        premium = policy.premium,
+        effective_at = policy.effective_at,
+        expires_at = policy.expires_at,
+        owner_identifier = policy.owner_identifier,
+        owner_name = policy.owner_name,
+        plate = policy.plate,
+        vehicle_identifier = policy.vehicle_identifier,
+        vehicle_model = policy.vehicle_model,
+        vehicle_display_name = policy.vehicle_display_name,
+    }
+end
+function STInsurance.GetVehicleInsuranceStateByPlate(plate)
+    return STInsurance.GetVehicleInsuranceByPlate(plate) or { insured = false, status = 'none', plate = STValidation.NormalizePlate(plate) }
+end
 
 exports('GetInsurancePlans', STInsurance.GetPlans)
 exports('GetInsurancePlan', STInsurance.GetPlan)
 exports('GetVehicleInsurance', STInsurance.GetPolicy)
+exports('GetVehicleInsuranceByPlate', STInsurance.GetVehicleInsuranceByPlate)
+exports('GetVehicleInsuranceStateByPlate', STInsurance.GetVehicleInsuranceStateByPlate)
 exports('GetInsurancePolicy', STInsurance.GetPolicyByNumber)
 exports('PurchaseVehicleInsurance', STInsurance.PurchasePolicy)
 exports('RenewVehicleInsurance', STInsurance.RenewPolicy)
