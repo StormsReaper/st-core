@@ -18,14 +18,10 @@ end)
 RegisterNetEvent('st-core:server:dmvData', function(targetSource)
     local source = targetSource or source
     local identifier = STPayments.GetIdentifier(source)
-    if not identifier then
-        return notify(source, result(false, 'Unable to identify your character.'))
-    end
+    if not identifier then return notify(source, result(false, 'Unable to identify your character.')) end
 
     local pending = {}
-    if STPurchases and STPurchases.GetPending then
-        pending = STPurchases.GetPending(source) or {}
-    end
+    if STPurchases and STPurchases.GetPending then pending = STPurchases.GetPending(source) or {} end
 
     local registrations = MySQL.query.await(
         'SELECT * FROM st_vehicle_registrations WHERE owner_identifier = ? ORDER BY updated_at DESC',
@@ -59,7 +55,6 @@ end)
 RegisterNetEvent('st-core:server:lookupVehicleByPlate', function(data)
     local source = source
     if type(data) ~= 'table' then return notify(source, result(false, 'Invalid request.')) end
-
     local identifier = STPayments.GetIdentifier(source)
     if not identifier then return notify(source, result(false, 'Unable to identify your character.')) end
 
@@ -73,17 +68,13 @@ RegisterNetEvent('st-core:server:lookupVehicleByPlate', function(data)
             or 'Unable to look up that plate.'))
     end
 
-    if lookup.alreadyRegistered then
-        return notify(source, result(true, 'This vehicle is already registered.', { lookup = lookup }))
-    end
-
+    if lookup.alreadyRegistered then return notify(source, result(true, 'This vehicle is already registered.', { lookup = lookup })) end
     notify(source, result(true, 'Vehicle found. Review the information before registering it.', { lookup = lookup }))
 end)
 
 RegisterNetEvent('st-core:server:registerVehicle', function(data)
     local source = source
     if type(data) ~= 'table' then return notify(source, result(false, 'Invalid request.')) end
-
     local identifier = STPayments.GetIdentifier(source)
     if not identifier then return notify(source, result(false, 'Unable to identify your character.')) end
 
@@ -93,25 +84,18 @@ RegisterNetEvent('st-core:server:registerVehicle', function(data)
     local vehicle, lookupError = STVehicles.LookupOwnedVehicleForDMV(identifier, STPayments.GetName(source), enteredPlate)
     if not vehicle then
         return notify(source, result(false, lookupError == 'vehicle_not_found_or_not_owned'
-            and 'Vehicle not found or you are not the owner.'
-            or 'Vehicle lookup failed.'))
+            and 'Vehicle not found or you are not the owner.' or 'Vehicle lookup failed.'))
     end
-
     if vehicle.alreadyRegistered then return notify(source, result(false, 'This vehicle is already registered.')) end
 
     local fee = tonumber(Config.Payment.RegistrationFee) or 0
     local customPlate = data.customPlate and STValidation.NormalizePlate(data.customPlate) or nil
     local customFee = customPlate and tonumber(Config.Plate.CustomPlateFee) or 0
     local total = fee + customFee
-
-    if customPlate and not STValidation.IsCustomPlate(customPlate) then
-        return notify(source, result(false, 'Invalid custom plate.'))
-    end
+    if customPlate and not STValidation.IsCustomPlate(customPlate) then return notify(source, result(false, 'Invalid custom plate.')) end
 
     local paid, paymentAccountOrError = STPayments.Charge(source, total, 'DMV vehicle registration')
-    if not paid then
-        return notify(source, result(false, paymentAccountOrError == 'insufficient_funds' and 'Insufficient funds.' or 'Payment failed.'))
-    end
+    if not paid then return notify(source, result(false, paymentAccountOrError == 'insufficient_funds' and 'Insufficient funds.' or 'Payment failed.')) end
 
     local ok, registration = STVehicles.RegisterVehicle({
         vehicleIdentifier = vehicle.vehicleIdentifier,
@@ -140,7 +124,7 @@ RegisterNetEvent('st-core:server:registerVehicle', function(data)
     end
 
     if STPurchases and STPurchases.MarkRegistered then
-        STPurchases.MarkRegistered(vehicle.vehicleIdentifier)
+        STPurchases.MarkRegistered(vehicle.vehicleIdentifier, enteredPlate, identifier)
     end
 
     STVehicles.SyncVehicleRecord(vehicle.vehicleIdentifier)
@@ -154,22 +138,17 @@ RegisterNetEvent('st-core:server:renewRegistration', function(data)
     local source = source
     local identifier = STPayments.GetIdentifier(source)
     local registration = STVehicles.GetRegistration(data and data.vehicleIdentifier)
-    if not registration or registration.owner_identifier ~= identifier then
-        return notify(source, result(false, 'Registration not found.'))
-    end
+    if not registration or registration.owner_identifier ~= identifier then return notify(source, result(false, 'Registration not found.')) end
 
     local fee = tonumber(Config.Payment.RegistrationRenewalFee) or Config.Payment.RegistrationFee or 0
     local paid, paymentAccountOrError = STPayments.Charge(source, fee, 'DMV registration renewal')
-    if not paid then
-        return notify(source, result(false, paymentAccountOrError == 'insufficient_funds' and 'Insufficient funds.' or 'Payment failed.'))
-    end
+    if not paid then return notify(source, result(false, paymentAccountOrError == 'insufficient_funds' and 'Insufficient funds.' or 'Payment failed.')) end
 
     local ok, renewed = STVehicles.RenewRegistration(registration.vehicle_identifier)
     if not ok then
         STPayments.Add(source, fee, paymentAccountOrError or 'bank', 'DMV renewal refund')
         return notify(source, result(false, renewed))
     end
-
     notify(source, result(true, 'Registration renewed.', renewed))
 end)
 
@@ -177,23 +156,15 @@ RegisterNetEvent('st-core:server:buyInsurance', function(data)
     local source = source
     local identifier = STPayments.GetIdentifier(source)
     local vehicle = STVehicles.GetRegistration(data and data.vehicleIdentifier)
-    if not vehicle or vehicle.owner_identifier ~= identifier then
-        return notify(source, result(false, 'Vehicle registration not found.'))
-    end
+    if not vehicle or vehicle.owner_identifier ~= identifier then return notify(source, result(false, 'Vehicle registration not found.')) end
 
     local plan = STInsurance.GetPlan(data.planId)
     if not plan then return notify(source, result(false, 'Insurance plan not found.')) end
 
     local paid, paymentAccountOrError = STPayments.Charge(source, plan.monthly_premium, 'Vehicle insurance premium')
-    if not paid then
-        return notify(source, result(false, paymentAccountOrError == 'insufficient_funds' and 'Insufficient funds.' or 'Payment failed.'))
-    end
+    if not paid then return notify(source, result(false, paymentAccountOrError == 'insufficient_funds' and 'Insufficient funds.' or 'Payment failed.')) end
 
-    local ok, policy = STInsurance.PurchasePolicy({
-        ownerIdentifier = identifier,
-        vehicleIdentifier = vehicle.vehicle_identifier,
-        planId = plan.id,
-    })
+    local ok, policy = STInsurance.PurchasePolicy({ ownerIdentifier = identifier, vehicleIdentifier = vehicle.vehicle_identifier, planId = plan.id })
     if not ok then
         STPayments.Add(source, plan.monthly_premium, paymentAccountOrError or 'bank', 'Insurance purchase refund')
         return notify(source, result(false, policy))
@@ -203,23 +174,17 @@ RegisterNetEvent('st-core:server:buyInsurance', function(data)
     policy.insured_name = vehicle.owner_name
     local cardOk, cardError = STDocuments.CreateInsuranceCard(source, policy)
     STVehicles.SyncVehicleRecord(vehicle.vehicle_identifier)
-    notify(source, result(true,
-        cardOk and 'Insurance purchased and card issued.' or ('Insurance purchased, but card could not be issued: ' .. tostring(cardError)),
-        policy))
+    notify(source, result(true, cardOk and 'Insurance purchased and card issued.' or ('Insurance purchased, but card could not be issued: ' .. tostring(cardError)), policy))
 end)
 
 RegisterNetEvent('st-core:server:renewInsurance', function(data)
     local source = source
     local identifier = STPayments.GetIdentifier(source)
     local policy = STInsurance.GetPolicy(data and data.vehicleIdentifier)
-    if not policy or policy.owner_identifier ~= identifier then
-        return notify(source, result(false, 'Insurance policy not found.'))
-    end
+    if not policy or policy.owner_identifier ~= identifier then return notify(source, result(false, 'Insurance policy not found.')) end
 
     local paid, paymentAccountOrError = STPayments.Charge(source, policy.premium, 'Vehicle insurance renewal')
-    if not paid then
-        return notify(source, result(false, paymentAccountOrError == 'insufficient_funds' and 'Insufficient funds.' or 'Payment failed.'))
-    end
+    if not paid then return notify(source, result(false, paymentAccountOrError == 'insufficient_funds' and 'Insufficient funds.' or 'Payment failed.')) end
 
     local ok, renewed = STInsurance.RenewPolicy(policy.vehicle_identifier)
     if not ok then
@@ -238,18 +203,14 @@ RegisterNetEvent('st-core:server:customPlate', function(data)
     local source = source
     local identifier = STPayments.GetIdentifier(source)
     local registration = STVehicles.GetRegistration(data and data.vehicleIdentifier)
-    if not registration or registration.owner_identifier ~= identifier then
-        return notify(source, result(false, 'Registration not found.'))
-    end
+    if not registration or registration.owner_identifier ~= identifier then return notify(source, result(false, 'Registration not found.')) end
 
     local plate = STValidation.NormalizePlate(data.plate)
     if not STValidation.IsCustomPlate(plate) then return notify(source, result(false, 'Invalid custom plate.')) end
 
     local fee = tonumber(Config.Plate.CustomPlateFee) or 0
     local paid, paymentAccountOrError = STPayments.Charge(source, fee, 'Custom vehicle plate')
-    if not paid then
-        return notify(source, result(false, paymentAccountOrError == 'insufficient_funds' and 'Insufficient funds.' or 'Payment failed.'))
-    end
+    if not paid then return notify(source, result(false, paymentAccountOrError == 'insufficient_funds' and 'Insufficient funds.' or 'Payment failed.')) end
 
     local oldPlate = registration.plate
     local synced, syncError = STVehicles.UpdateOwnedVehiclePlate(identifier, oldPlate, plate)
