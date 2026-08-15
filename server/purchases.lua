@@ -14,11 +14,9 @@ end
 local function getPending(source)
     local identifier = STPayments.GetIdentifier(source)
     if not identifier then return {} end
-
     local rows, ok = dbCall(function()
         return MySQL.query.await([[SELECT * FROM st_vehicle_purchases WHERE owner_identifier = ? AND status = 'pending' ORDER BY purchased_at DESC]], { identifier })
     end)
-
     return ok and (rows or {}) or {}
 end
 
@@ -52,7 +50,6 @@ function STPurchases.RecordPurchase(data)
             tonumber(data.purchasedAt) or os.time(),
         })
     end)
-
     return insertOk and id ~= nil, insertOk and (id or 'database_insert_failed') or 'database_insert_failed'
 end
 
@@ -68,15 +65,20 @@ function STPurchases.GetPurchase(vehicleIdentifier)
     return ok and result or nil
 end
 
-function STPurchases.MarkRegistered(vehicleIdentifier)
+function STPurchases.MarkRegistered(vehicleIdentifier, temporaryPlate, ownerIdentifier)
     if not STValidation.IsIdentifier(vehicleIdentifier) then return false end
     local result, ok = dbCall(function()
-        return MySQL.update.await(
-            "UPDATE st_vehicle_purchases SET status = 'registered', registered_at = ?, updated_at = CURRENT_TIMESTAMP WHERE vehicle_identifier = ? AND status = 'pending'",
-            { os.time(), vehicleIdentifier }
-        )
+        return MySQL.update.await([[
+            UPDATE st_vehicle_purchases
+            SET status = 'registered', registered_at = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE status = 'pending'
+              AND (
+                    vehicle_identifier = ?
+                    OR (? IS NOT NULL AND temporary_plate = ? AND owner_identifier = ?)
+              )
+        ]], { os.time(), vehicleIdentifier, temporaryPlate, temporaryPlate, ownerIdentifier })
     end)
-    return ok and result == 1 or false
+    return ok and result >= 1 or false
 end
 
 function STPurchases.HandlePurchase(source, data)
